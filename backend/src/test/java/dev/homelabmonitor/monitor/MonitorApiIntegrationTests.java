@@ -1,6 +1,7 @@
 package dev.homelabmonitor.monitor;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -27,11 +28,14 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.ObjectMapper;
 
 @Import(TestcontainersConfiguration.class)
 @AutoConfigureMockMvc
+@WithMockUser(roles = "OWNER")
 @SpringBootTest(properties = "homelab-monitor.scheduling.enabled=false")
 class MonitorApiIntegrationTests {
 
@@ -55,6 +59,23 @@ class MonitorApiIntegrationTests {
 	@BeforeEach
 	void clearMonitors() {
 		monitorRepository.deleteAll();
+	}
+
+	@Test
+	@WithAnonymousUser
+	void rejectsUnauthenticatedMutationsEvenWithValidCsrf() throws Exception {
+		String request = httpRequest(false, "http://127.0.0.1:8080/health", 1);
+		UUID id = UUID.randomUUID();
+		mockMvc.perform(post("/api/v1/monitors").with(csrf())
+				.contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(put("/api/v1/monitors/{id}", id).with(csrf())
+				.contentType(MediaType.APPLICATION_JSON).content(request))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(delete("/api/v1/monitors/{id}", id).with(csrf()))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(post("/api/v1/monitors/{id}/checks", id).with(csrf()))
+				.andExpect(status().isUnauthorized());
 	}
 
 	@Test
@@ -238,7 +259,7 @@ class MonitorApiIntegrationTests {
 
 		try (ExecutorService caller = Executors.newSingleThreadExecutor()) {
 			Future<MvcResult> activeCheck = caller.submit(() -> mockMvc.perform(
-					post("/api/v1/monitors/{id}/checks", id).with(csrf())).andReturn());
+					post("/api/v1/monitors/{id}/checks", id).with(user("owner").roles("OWNER")).with(csrf())).andReturn());
 			org.assertj.core.api.Assertions.assertThat(requestStarted.await(1, TimeUnit.SECONDS)).isTrue();
 
 			mockMvc.perform(put("/api/v1/monitors/{id}", id)
@@ -281,7 +302,7 @@ class MonitorApiIntegrationTests {
 
 		try (ExecutorService caller = Executors.newSingleThreadExecutor()) {
 			Future<MvcResult> activeCheck = caller.submit(() -> mockMvc.perform(
-					post("/api/v1/monitors/{id}/checks", id).with(csrf())).andReturn());
+					post("/api/v1/monitors/{id}/checks", id).with(user("owner").roles("OWNER")).with(csrf())).andReturn());
 			org.assertj.core.api.Assertions.assertThat(requestStarted.await(1, TimeUnit.SECONDS)).isTrue();
 			mockMvc.perform(put("/api/v1/monitors/{id}", id).with(csrf())
 						.contentType(MediaType.APPLICATION_JSON)
@@ -319,7 +340,7 @@ class MonitorApiIntegrationTests {
 
 		try (ExecutorService caller = Executors.newSingleThreadExecutor()) {
 			Future<MvcResult> activeCheck = caller.submit(() -> mockMvc.perform(
-					post("/api/v1/monitors/{id}/checks", id).with(csrf())).andReturn());
+					post("/api/v1/monitors/{id}/checks", id).with(user("owner").roles("OWNER")).with(csrf())).andReturn());
 			org.assertj.core.api.Assertions.assertThat(requestStarted.await(1, TimeUnit.SECONDS)).isTrue();
 			mockMvc.perform(delete("/api/v1/monitors/{id}", id).with(csrf()))
 					.andExpect(status().isNoContent());

@@ -28,7 +28,7 @@ npm run dev
 ```
 
 The frontend is served at `http://localhost:5173` and proxies `/actuator` and future `/api` calls to the backend at `http://localhost:8080`. Development OpenAPI JSON is available at `http://localhost:8080/v3/api-docs`.
-The unauthenticated development backend binds to `127.0.0.1` and validates loopback Host headers by default. Set `SERVER_ADDRESS` and a matching comma-separated `ALLOWED_HOSTS` value only when intentionally exposing it on a trusted network; owner authentication is not implemented until Phase 4.
+The authenticated development backend binds to `127.0.0.1` and validates loopback Host headers by default. On first launch, open the frontend and create the singleton owner account. Set `SERVER_ADDRESS` and a matching comma-separated `ALLOWED_HOSTS` value only when intentionally exposing it on a trusted network.
 
 ## Development on POSIX
 
@@ -73,6 +73,8 @@ Copy `.env.example` to `.env` to override these local defaults. `.env` is ignore
 | `POSTGRES_USER` | `homelab_monitor` | Development database user |
 | `POSTGRES_PASSWORD` | `homelab_monitor_dev` | Development-only database password |
 | `POSTGRES_PORT` | `5432` | Loopback host port for PostgreSQL |
+| `SESSION_TIMEOUT` | `30m` | Inactivity timeout for the owner session |
+| `SESSION_COOKIE_SECURE` | `false` | Set to `true` when the browser origin uses HTTPS |
 The backend development profile imports the repository-root `.env`, so the same `POSTGRES_*` values configure Compose and the locally launched application. Environment variables still take precedence over file values. Phase 8 will document every production variable and secret lifecycle.
 
 ## PostgreSQL backup — planned for Phase 8

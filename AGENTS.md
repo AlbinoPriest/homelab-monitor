@@ -61,4 +61,4 @@ Never report a check as passing when it did not run.
 
 ## Current checkpoint
 
-Phase 3 establishes the responsive dashboard, service inventory and detail views, adaptive monitor forms, and deliberate management actions. After its verified commit, Phase 4 is next: implement first-owner setup and session authentication without pulling incident or analytics work forward.
+Phase 4 establishes singleton owner setup, server-side session authentication, authenticated APIs and frontend route gating. After its verified commit, Phase 5 is next: implement incident lifecycle and reliability semantics without pulling analytics or realtime delivery forward.

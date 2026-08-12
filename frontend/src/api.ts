@@ -1,6 +1,14 @@
 import type { Monitor, MonitorCheck, MonitorInput, Page, StateHistory } from './types'
 
 type CsrfToken = { headerName: string; parameterName: string; token: string }
+export type OwnerSummary = { email: string; displayName: string }
+export type AuthStatus = {
+  setupRequired: boolean
+  authenticated: boolean
+  owner: OwnerSummary | null
+}
+export type SetupInput = OwnerSummary & { password: string }
+export type LoginInput = { email: string; password: string }
 let csrfToken: Promise<CsrfToken> | undefined
 
 export class ApiError extends Error {
@@ -27,28 +35,54 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { Accept: 'application/json', ...init?.headers },
   })
-  if (!response.ok) throw await parseError(response)
+  if (!response.ok) {
+    if (response.status === 401 && path !== '/api/v1/auth/status') {
+      window.dispatchEvent(new Event('homelab-auth-required'))
+    }
+    throw await parseError(response)
+  }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }
 
 async function mutation<T>(path: string, method: string, body?: unknown): Promise<T> {
-  csrfToken ??= request<CsrfToken>('/api/v1/csrf').catch((error: unknown) => {
-    csrfToken = undefined
-    throw error
-  })
-  const csrf = await csrfToken
-  return request<T>(path, {
-    method,
-    headers: {
-      [csrf.headerName]: csrf.token,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  async function send(retried: boolean): Promise<T> {
+    csrfToken ??= request<CsrfToken>('/api/v1/csrf').catch((error: unknown) => {
+      csrfToken = undefined
+      throw error
+    })
+    const csrf = await csrfToken
+    try {
+      return await request<T>(path, {
+        method,
+        headers: {
+          [csrf.headerName]: csrf.token,
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+    } catch (error) {
+      if (!retried && error instanceof ApiError && error.status === 403) {
+        csrfToken = undefined
+        return send(true)
+      }
+      throw error
+    }
+  }
+  return send(false)
 }
 
 export const api = {
+  authStatus: () => request<AuthStatus>('/api/v1/auth/status'),
+  setupOwner: (input: SetupInput) => mutation<AuthStatus>('/api/v1/auth/setup', 'POST', input),
+  login: (input: LoginInput) => mutation<AuthStatus>('/api/v1/auth/login', 'POST', input),
+  logout: async () => {
+    try {
+      return await mutation<void>('/api/v1/auth/logout', 'POST')
+    } finally {
+      csrfToken = undefined
+    }
+  },
   listMonitors: () => request<Monitor[]>('/api/v1/monitors'),
   getMonitor: (id: string) => request<Monitor>(`/api/v1/monitors/${id}`),
   getChecks: (id: string) => request<Page<MonitorCheck>>(`/api/v1/monitors/${id}/checks?size=20`),

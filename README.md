@@ -3,7 +3,7 @@
 HomeLab Monitor is a self-hosted application for tracking the availability, latency, reliability, and incidents of HTTP/HTTPS and TCP services on a home network.
 
 > [!IMPORTANT]
-> The repository contains the verified Phase 1 application foundation. Monitoring, authentication, and production deployment remain planned; the capabilities below describe the version 1 target.
+> The repository contains the verified monitoring core, management interface, and single-owner authentication through Phase 4. Incidents, analytics, realtime updates, and production deployment remain planned.
 
 ## Version 1 scope
 
@@ -44,7 +44,7 @@ docs/              Product, architecture, deployment, and ADR documentation
 
 ## Development status
 
-Phase 1 provides a Java 21/Spring Boot backend, React/TypeScript frontend, local PostgreSQL Compose service, Flyway integration, and CI checks. The foundation page reports backend health; monitor features begin in Phase 2.
+Phase 4 provides first-run owner setup, server-side session authentication, and an authenticated React application over the Phase 2 monitoring core and Phase 3 management interface.
 
 For a local development run, follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). The authoritative requirements and phase status live in [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md).
 

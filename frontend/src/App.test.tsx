@@ -38,6 +38,16 @@ function response(body: unknown, status = 200) {
   )
 }
 
+const authenticated = {
+  setupRequired: false,
+  authenticated: true,
+  owner: { email: 'owner@example.com', displayName: 'Lab Owner' },
+}
+
+function isAuthStatus(input: RequestInfo | URL) {
+  return String(input).endsWith('/api/v1/auth/status')
+}
+
 function renderApp(path = '/') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -59,7 +69,9 @@ describe('monitoring dashboard', () => {
   })
 
   it('summarizes status and links to monitored services', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(() => response([monitor]))
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      isAuthStatus(input) ? response(authenticated) : response([monitor]),
+    )
     renderApp()
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
     expect((await screen.findAllByText('NAS dashboard')).length).toBeGreaterThan(0)
@@ -77,7 +89,9 @@ describe('monitoring dashboard', () => {
       port: 22,
       status: 'OFFLINE' as const,
     }
-    vi.spyOn(globalThis, 'fetch').mockImplementation(() => response([monitor, offline]))
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      isAuthStatus(input) ? response(authenticated) : response([monitor, offline]),
+    )
     renderApp('/services')
     const search = await screen.findByRole('textbox', { name: 'Search services' })
     await userEvent.type(search, 'router')
@@ -92,6 +106,7 @@ describe('monitoring dashboard', () => {
   it('adapts the create form for TCP and sends a CSRF-protected request', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input)
+      if (isAuthStatus(input)) return response(authenticated)
       if (url.endsWith('/csrf')) {
         return response({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'test-token' })
       }
@@ -125,6 +140,7 @@ describe('monitoring dashboard', () => {
   it('shows detail checks and supports a manual check', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input)
+      if (isAuthStatus(input)) return response(authenticated)
       if (url.endsWith('/csrf')) {
         return response({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' })
       }
@@ -174,6 +190,7 @@ describe('monitoring dashboard', () => {
   it('distinguishes failed detail requests from empty history', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = String(input)
+      if (isAuthStatus(input)) return response(authenticated)
       if (url.includes('/checks') || url.includes('/history')) {
         return response({ detail: 'Unavailable' }, 503)
       }
@@ -188,6 +205,7 @@ describe('monitoring dashboard', () => {
   it('does not announce empty history while history is loading', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = String(input)
+      if (isAuthStatus(input)) return response(authenticated)
       if (url.includes('/history')) return new Promise<Response>(() => undefined)
       if (url.includes('/checks')) {
         return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
@@ -203,6 +221,7 @@ describe('monitoring dashboard', () => {
   it('focuses the safe delete action and reports deletion failure', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input)
+      if (isAuthStatus(input)) return response(authenticated)
       if (url.endsWith('/csrf')) {
         return response({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' })
       }
@@ -219,5 +238,111 @@ describe('monitoring dashboard', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete monitor' }))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Deletion failed safely.')
     expect(dialog).toBeInTheDocument()
+  })
+
+  it('creates the single owner account with a CSRF-protected request', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = String(input)
+      if (isAuthStatus(input)) {
+        return response({ setupRequired: true, authenticated: false, owner: null })
+      }
+      if (url.endsWith('/csrf')) {
+        return response({
+          headerName: 'X-XSRF-TOKEN',
+          parameterName: '_csrf',
+          token: 'setup-token',
+        })
+      }
+      if (url.endsWith('/auth/setup') && init?.method === 'POST')
+        return response(authenticated, 201)
+      return response([])
+    })
+    renderApp()
+    expect(await screen.findByRole('heading', { name: 'Secure your monitor' })).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Display name'), 'Lab Owner')
+    await userEvent.type(screen.getByLabelText('Email'), 'owner@example.com')
+    await userEvent.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await userEvent.type(screen.getByLabelText('Confirm password'), 'correct horse battery staple')
+    await userEvent.click(screen.getByRole('button', { name: 'Create owner account' }))
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/auth/setup',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'X-XSRF-TOKEN': 'setup-token' }),
+      }),
+    )
+  })
+
+  it('shows a generic login error without entering the application', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (isAuthStatus(input)) {
+        return response({ setupRequired: false, authenticated: false, owner: null })
+      }
+      if (String(input).endsWith('/csrf')) {
+        return response({
+          headerName: 'X-XSRF-TOKEN',
+          parameterName: '_csrf',
+          token: 'login-token',
+        })
+      }
+      return response({ detail: 'Invalid email or password.' }, 401)
+    })
+    renderApp()
+    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Email'), 'owner@example.com')
+    await userEvent.type(screen.getByLabelText('Password'), 'wrong-password')
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid email or password.')
+    expect(screen.queryByRole('heading', { name: 'Dashboard' })).not.toBeInTheDocument()
+  })
+
+  it('refreshes an expired session CSRF token and retries login once', async () => {
+    let csrfRequests = 0
+    let loginRequests = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = String(input)
+      if (isAuthStatus(input)) {
+        return response({ setupRequired: false, authenticated: false, owner: null })
+      }
+      if (url.endsWith('/csrf')) {
+        csrfRequests += 1
+        return response({
+          headerName: 'X-XSRF-TOKEN',
+          parameterName: '_csrf',
+          token: csrfRequests === 1 ? 'expired-token' : 'fresh-token',
+        })
+      }
+      if (url.endsWith('/auth/login') && init?.method === 'POST') {
+        loginRequests += 1
+        return loginRequests === 1 ? response({}, 403) : response(authenticated)
+      }
+      return response([])
+    })
+    renderApp()
+    await userEvent.type(await screen.findByLabelText('Email'), 'owner@example.com')
+    await userEvent.type(screen.getByLabelText('Password'), 'correct horse battery staple')
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
+    expect(csrfRequests).toBe(2)
+    expect(loginRequests).toBe(2)
+  })
+
+  it('returns to the login gate when a protected request reports an expired session', async () => {
+    let statusRequests = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (isAuthStatus(input)) {
+        statusRequests += 1
+        return response(
+          statusRequests === 1
+            ? authenticated
+            : { setupRequired: false, authenticated: false, owner: null },
+        )
+      }
+      return response({ detail: 'Sign in to continue.' }, 401)
+    })
+    renderApp()
+    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add monitor' })).not.toBeInTheDocument()
   })
 })
