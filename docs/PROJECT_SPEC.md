@@ -10,7 +10,7 @@ This document is the durable source of product requirements and delivery status.
 | 1 | Backend/frontend foundation, PostgreSQL, Flyway, development Docker, CI | Complete (`9901b60`–`d1be14e`; backend and DevOps review passed) |
 | 2 | Monitor CRUD, checks, executors, scheduler, state engine, history | Complete (`bbfbc81`; verification, smoke test, and review gates passed) |
 | 3 | Dashboard and monitor-management UI/API | Complete (`ed43be6`; verification, responsive browser smoke test, and review gates passed) |
-| 4 | First-owner setup and session authentication | Not started |
+| 4 | First-owner setup and session authentication | Complete (verification, browser smoke test, and review gates passed) |
 | 5 | Thresholds, incidents, degraded state, pause/freshness reliability | Not started |
 | 6 | Duration-based metrics, latency analytics, retention | Not started |
 | 7 | Authenticated Server-Sent Events | Not started |
@@ -199,4 +199,4 @@ Multi-user/RBAC, ICMP, SNMP, Proxmox, Home Assistant, Docker Engine, Tailscale, 
 
 ## Next checkpoint
 
-Begin Phase 4 from the verified Phase 3 dashboard/management checkpoint. Implement first-owner setup and session authentication through security, backend, and adversarial QA review. Protect all application API and frontend routes without shipping default credentials or arbitrary registration.
+Begin Phase 5 from the verified Phase 4 authentication checkpoint. Implement incident lifecycle and reliability semantics through backend, architecture, and adversarial QA review without pulling analytics or realtime delivery forward.

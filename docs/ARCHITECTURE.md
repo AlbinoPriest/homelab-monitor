@@ -1,6 +1,6 @@
 # Architecture
 
-This document records durable constraints and the current design. The monitoring core and Phase 3 management interface are implemented; sections marked **Planned** describe later phases.
+This document records durable constraints and the current design. The monitoring core, management interface, and Phase 4 owner authentication are implemented; sections marked **Planned** describe later phases.
 
 ## Implemented foundation
 
@@ -8,7 +8,7 @@ This document records durable constraints and the current design. The monitoring
 - PostgreSQL is the application database. Flyway owns schema evolution and Hibernate uses `ddl-auto=validate`; domain migrations begin with Phase 2.
 - The React/TypeScript application uses Vite, React Router, and TanStack Query. The dashboard and service-management routes consume the versioned monitor APIs through the same-origin development proxy.
 - Development runs PostgreSQL in Docker Compose while backend and frontend run directly. Production container topology remains Phase 8 work.
-- Until Phase 4 adds owner authentication, the development security chain permits requests and provides no user accounts. Monitor mutations require CSRF protection, and loopback binding plus Host validation keep this checkpoint local-only.
+- A singleton owner is created through first-run setup and authenticated with a server-side Spring Security session. All monitor APIs require that owner; setup, login, auth status, CSRF bootstrap, and health remain public. Mutations require CSRF protection, while loopback binding and Host validation remain defense in depth for development.
 
 ## Frontend application
 
@@ -23,6 +23,10 @@ show inline success or safe error feedback, destructive deletion requires confir
 focus and close with Escape, and all status presentations retain a text label at every breakpoint.
 Incident, uptime, and latency analytics are intentionally not fabricated from raw check counts; their UI
 surfaces remain deferred until the authoritative Phase 5/6 APIs exist.
+
+Before rendering application routes, the frontend resolves authentication status and presents either the
+one-time owner setup or login form. A successful setup signs the owner in. A protected API `401` refreshes
+the authentication gate, and logout clears both the server session and cached client state.
 
 ## System context — planned
 
@@ -95,8 +99,15 @@ The owner can intentionally monitor private network services. Therefore target f
 - API errors and logs omit secrets and internal exception details.
 - Session cookies, CSRF, CORS/same-origin behavior, Actuator exposure, and reverse-proxy headers require dedicated review in Phases 4 and 8.
 
-Private IP addresses remain allowed by design. Phase 2 APIs are not yet authenticated, so this development checkpoint must not be exposed to untrusted networks. Phase 4 makes monitor configuration and manual execution owner-only.
-Until then, the backend binds to `127.0.0.1` and accepts only `localhost`, `127.0.0.1`, and `[::1]` Host headers by default, preventing browser DNS-rebinding access. `SERVER_ADDRESS` and matching `ALLOWED_HOSTS` values are explicit opt-in overrides for trusted remote development only.
+Private IP addresses remain allowed by design. Monitor reads, configuration, and manual execution are owner-only. The backend also binds to `127.0.0.1` and accepts only `localhost`, `127.0.0.1`, and `[::1]` Host headers by default, preventing browser DNS-rebinding access during development. `SERVER_ADDRESS` and matching `ALLOWED_HOSTS` values are explicit opt-in overrides for trusted remote development only.
+
+The database enforces exactly one owner. Email addresses are normalized, passwords are BCrypt-hashed at
+strength 12, and setup races fail closed. Authentication rotates an existing session identifier; logout
+invalidates the session. The session cookie is HttpOnly, SameSite=Lax, expires after 30 minutes of
+inactivity by default, and must be configured Secure when served through production HTTPS.
+Login attempts are bounded over a rolling one-minute window globally and by direct source address and
+normalized account. Throttling returns a generic `429` with `Retry-After` and expires without permanent
+lockout. Phase 8 must explicitly define trusted reverse-proxy source-address handling before production.
 
 ## Data and migrations
 

@@ -1,6 +1,10 @@
 package dev.homelabmonitor.common.web;
 
 import dev.homelabmonitor.monitor.InvalidMonitorException;
+import dev.homelabmonitor.auth.InvalidAuthRequestException;
+import dev.homelabmonitor.auth.InvalidCredentialsException;
+import dev.homelabmonitor.auth.LoginThrottledException;
+import dev.homelabmonitor.auth.SetupUnavailableException;
 import dev.homelabmonitor.monitor.MonitorBusyException;
 import dev.homelabmonitor.monitor.MonitorNotFoundException;
 import java.net.URI;
@@ -8,12 +12,36 @@ import java.util.List;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+	@ExceptionHandler(LoginThrottledException.class)
+	ResponseEntity<ProblemDetail> loginThrottled(LoginThrottledException exception) {
+		ProblemDetail detail = problem(HttpStatus.TOO_MANY_REQUESTS, "Authentication temporarily limited",
+				exception.getMessage());
+		return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+				.header("Retry-After", Long.toString(exception.retryAfter().toSeconds()))
+				.body(detail);
+	}
+
+	@ExceptionHandler(InvalidCredentialsException.class)
+	ProblemDetail invalidCredentials(InvalidCredentialsException exception) {
+		return problem(HttpStatus.UNAUTHORIZED, "Authentication failed", exception.getMessage());
+	}
+
+	@ExceptionHandler(SetupUnavailableException.class)
+	ProblemDetail setupUnavailable(SetupUnavailableException exception) {
+		return problem(HttpStatus.CONFLICT, "Setup unavailable", exception.getMessage());
+	}
+
+	@ExceptionHandler(InvalidAuthRequestException.class)
+	ProblemDetail invalidAuthRequest(InvalidAuthRequestException exception) {
+		return problem(HttpStatus.BAD_REQUEST, "Invalid authentication request", exception.getMessage());
+	}
 
 	@ExceptionHandler(MonitorNotFoundException.class)
 	ProblemDetail notFound(MonitorNotFoundException exception) {

@@ -1,7 +1,7 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError } from './api'
+import { api, ApiError, type AuthStatus } from './api'
 import {
   ConfirmDialog,
   EmptyState,
@@ -15,7 +15,19 @@ import type { Monitor, MonitorInput, MonitorStatus } from './types'
 
 const monitorKey = ['monitors'] as const
 
-function Layout({ children, onAdd }: { children: ReactNode; onAdd: () => void }) {
+function Layout({
+  children,
+  onAdd,
+  owner,
+  onLogout,
+  loggingOut,
+}: {
+  children: ReactNode
+  onAdd: () => void
+  owner: NonNullable<AuthStatus['owner']>
+  onLogout: () => void
+  loggingOut: boolean
+}) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -52,10 +64,18 @@ function Layout({ children, onAdd }: { children: ReactNode; onAdd: () => void })
             <span className="brand-mark">HM</span>
             <strong>HomeLab Monitor</strong>
           </div>
-          <button className="button primary compact" onClick={onAdd}>
-            <Icons.plus />
-            Add monitor
-          </button>
+          <div className="topbar-actions">
+            <span className="owner-name" title={owner.email}>
+              {owner.displayName}
+            </span>
+            <button className="button tertiary compact" disabled={loggingOut} onClick={onLogout}>
+              {loggingOut ? 'Signing out…' : 'Sign out'}
+            </button>
+            <button className="button primary compact" onClick={onAdd}>
+              <Icons.plus />
+              Add monitor
+            </button>
+          </div>
         </header>
         <main className="content">{children}</main>
       </div>
@@ -592,7 +612,15 @@ function message(error: Error) {
   return error instanceof ApiError ? error.message : 'The request could not be completed.'
 }
 
-export function App() {
+function MonitoringApp({
+  auth,
+  onLogout,
+  loggingOut,
+}: {
+  auth: AuthStatus & { owner: NonNullable<AuthStatus['owner']> }
+  onLogout: () => void
+  loggingOut: boolean
+}) {
   const client = useQueryClient()
   const [form, setForm] = useState<{ open: boolean; monitor?: Monitor }>({ open: false })
   const [notice, setNotice] = useState<string>()
@@ -609,7 +637,12 @@ export function App() {
     },
   })
   return (
-    <Layout onAdd={() => setForm({ open: true })}>
+    <Layout
+      onAdd={() => setForm({ open: true })}
+      owner={auth.owner}
+      onLogout={onLogout}
+      loggingOut={loggingOut}
+    >
       <Routes>
         <Route path="/" element={<DashboardPage add={() => setForm({ open: true })} />} />
         <Route
@@ -662,5 +695,173 @@ export function App() {
         </div>
       ) : null}
     </Layout>
+  )
+}
+
+function AuthScreen({
+  setup,
+  onAuthenticated,
+}: {
+  setup: boolean
+  onAuthenticated: (auth: AuthStatus) => void
+}) {
+  const [email, setEmail] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const authenticate = useMutation({
+    mutationFn: () =>
+      setup ? api.setupOwner({ email, displayName, password }) : api.login({ email, password }),
+    onSuccess: onAuthenticated,
+  })
+  const confirmationError = setup && confirmation !== password
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!confirmationError) authenticate.mutate()
+  }
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-card" aria-labelledby="auth-title">
+        <Link className="brand auth-brand" to="/" aria-label="HomeLab Monitor">
+          <span className="brand-mark">HM</span>
+          <span>HomeLab Monitor</span>
+        </Link>
+        <p className="eyebrow">{setup ? 'First-time setup' : 'Owner access'}</p>
+        <h1 id="auth-title">{setup ? 'Secure your monitor' : 'Welcome back'}</h1>
+        <p className="auth-intro">
+          {setup
+            ? 'Create the single owner account used to manage this HomeLab Monitor.'
+            : 'Sign in with the owner account to view and manage your services.'}
+        </p>
+        <form onSubmit={submit}>
+          {setup ? (
+            <label>
+              Display name
+              <input
+                autoComplete="name"
+                maxLength={120}
+                required
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+              />
+            </label>
+          ) : null}
+          <label>
+            Email
+            <input
+              autoComplete="email"
+              maxLength={254}
+              required
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          </label>
+          <label>
+            Password
+            <input
+              autoComplete={setup ? 'new-password' : 'current-password'}
+              minLength={setup ? 12 : undefined}
+              maxLength={72}
+              required
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </label>
+          {setup ? (
+            <label>
+              Confirm password
+              <input
+                autoComplete="new-password"
+                minLength={12}
+                maxLength={72}
+                required
+                type="password"
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+              />
+            </label>
+          ) : null}
+          {confirmationError ? (
+            <p className="inline-error" role="alert">
+              Passwords do not match.
+            </p>
+          ) : authenticate.isError ? (
+            <p className="inline-error" role="alert">
+              {message(authenticate.error)}
+            </p>
+          ) : null}
+          <button
+            className="button primary auth-submit"
+            disabled={authenticate.isPending || confirmationError}
+          >
+            {authenticate.isPending
+              ? setup
+                ? 'Creating owner…'
+                : 'Signing in…'
+              : setup
+                ? 'Create owner account'
+                : 'Sign in'}
+          </button>
+        </form>
+      </section>
+    </main>
+  )
+}
+
+export function App() {
+  const client = useQueryClient()
+  const auth = useQuery({ queryKey: ['auth'], queryFn: api.authStatus, retry: false })
+  const logout = useMutation({
+    mutationFn: api.logout,
+    onSuccess: () => {
+      client.clear()
+      client.setQueryData<AuthStatus>(['auth'], {
+        setupRequired: false,
+        authenticated: false,
+        owner: null,
+      })
+    },
+  })
+
+  useEffect(() => {
+    const requireAuthentication = () => void client.invalidateQueries({ queryKey: ['auth'] })
+    window.addEventListener('homelab-auth-required', requireAuthentication)
+    return () => window.removeEventListener('homelab-auth-required', requireAuthentication)
+  }, [client])
+
+  if (auth.isPending) {
+    return (
+      <main className="auth-shell">
+        <div className="auth-loading" role="status">
+          Loading HomeLab Monitor…
+        </div>
+      </main>
+    )
+  }
+  if (auth.isError) {
+    return (
+      <main className="auth-shell">
+        <ErrorState retry={() => void auth.refetch()} />
+      </main>
+    )
+  }
+  if (auth.data.setupRequired || !auth.data.authenticated || !auth.data.owner) {
+    return (
+      <AuthScreen
+        setup={auth.data.setupRequired}
+        onAuthenticated={(value) => client.setQueryData(['auth'], value)}
+      />
+    )
+  }
+  return (
+    <MonitoringApp
+      auth={auth.data as AuthStatus & { owner: NonNullable<AuthStatus['owner']> }}
+      onLogout={() => logout.mutate()}
+      loggingOut={logout.isPending}
+    />
   )
 }
