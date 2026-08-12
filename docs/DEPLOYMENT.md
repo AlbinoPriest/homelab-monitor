@@ -1,6 +1,6 @@
 # Deployment
 
-This is the deployment contract and Phase 0 skeleton. Docker files, environment variables, images, and runnable commands will be implemented in later phases; commands marked **planned** must not be treated as working yet.
+This is the deployment contract. Phase 1 provides a verified local development workflow; production images and deployment remain Phase 8 work.
 
 ## Target topology — planned
 
@@ -11,37 +11,39 @@ Browser -> frontend/reverse proxy -> backend -> PostgreSQL
 
 Production exposes one browser origin. The backend and PostgreSQL use internal Compose networking, and PostgreSQL uses a named volume.
 
-## Development on Windows — planned for Phase 1
+## Development on Windows
 
-Prerequisites will include Java 21, Node.js, Docker Desktop, and Git. PostgreSQL will run in Docker while the backend and frontend may run directly.
+Prerequisites are Java 21, Node.js 24 or later with npm 11 or later, Docker Engine with Docker Compose, and Git. PostgreSQL runs in Docker while the backend and frontend run directly. The database port binds to loopback only.
 
 ```powershell
 Copy-Item .env.example .env
 docker compose -f docker-compose.dev.yml up -d
 
 cd backend
-.\mvnw.cmd spring-boot:run
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=dev"
 
 cd ..\frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Exact Node and Docker minimum versions and the concrete environment variables will be documented after the scaffolds exist.
+The frontend is served at `http://localhost:5173` and proxies `/actuator` and future `/api` calls to the backend at `http://localhost:8080`. Development OpenAPI JSON is available at `http://localhost:8080/v3/api-docs`.
 
-## Development on POSIX — planned for Phase 1
+## Development on POSIX
 
 ```bash
 cp .env.example .env
 docker compose -f docker-compose.dev.yml up -d
 
 cd backend
-./mvnw spring-boot:run
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 
 cd ../frontend
-npm install
+npm ci
 npm run dev
 ```
+
+Stop PostgreSQL with `docker compose -f docker-compose.dev.yml down`. The named volume is retained; add `--volumes` only when intentionally discarding local development data.
 
 ## Linux production deployment — planned for Phase 8
 
@@ -60,9 +62,17 @@ Phase 8 must document TLS/reverse-proxy assumptions, ports, health checks, resta
 
 The final process will include backing up, fetching the intended release, rebuilding images, allowing Flyway to migrate on backend startup, verifying health, and retaining a rollback path. Do not downgrade across Flyway migrations without an explicit compatible procedure.
 
-## Environment configuration — pending Phase 1/8
+## Development environment configuration
 
-`.env.example` will contain names and safe placeholders only. `.env` is ignored. No real database password or application secret belongs in Git. The final table must describe every variable, default, required status, and whether changing it affects stored sessions or data.
+Copy `.env.example` to `.env` to override these local defaults. `.env` is ignored. The checked-in password is intentionally development-only; never reuse it for production.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `POSTGRES_DB` | `homelab_monitor` | Development database name |
+| `POSTGRES_USER` | `homelab_monitor` | Development database user |
+| `POSTGRES_PASSWORD` | `homelab_monitor_dev` | Development-only database password |
+| `POSTGRES_PORT` | `5432` | Loopback host port for PostgreSQL |
+The backend development profile imports the repository-root `.env`, so the same `POSTGRES_*` values configure Compose and the locally launched application. Environment variables still take precedence over file values. Phase 8 will document every production variable and secret lifecycle.
 
 ## PostgreSQL backup — planned for Phase 8
 

@@ -1,6 +1,14 @@
 # Architecture
 
-This document records durable constraints and the current design. Sections marked **Planned** are not implemented at the Phase 0 checkpoint.
+This document records durable constraints and the current design. The Phase 1 application foundation is implemented; sections marked **Planned** describe later phases.
+
+## Implemented foundation
+
+- The Java 21/Spring Boot modular monolith starts with Spring MVC, Data JPA, Validation, Security, Actuator, and development-only OpenAPI support.
+- PostgreSQL is the application database. Flyway owns schema evolution and Hibernate uses `ddl-auto=validate`; domain migrations begin with Phase 2.
+- The React/TypeScript application uses Vite, React Router, and TanStack Query. Its foundation screen exercises the proxied backend health endpoint.
+- Development runs PostgreSQL in Docker Compose while backend and frontend run directly. Production container topology remains Phase 8 work.
+- Until Phase 4 adds owner authentication, the foundation security chain permits requests and provides no user accounts. There are no mutation or domain APIs in this phase; CSRF protection remains enabled.
 
 ## System context — planned
 
@@ -71,9 +79,9 @@ The owner can intentionally monitor private network services. Therefore target f
 
 Private IP addresses remain allowed by design. Documentation and UI must not suggest that untrusted users can safely receive configuration access.
 
-## Data and migrations — planned
+## Data and migrations
 
-PostgreSQL is authoritative. Flyway performs incremental migrations; Hibernate validates rather than creates production schema. State history provides authoritative transition intervals, while checks provide observation and latency detail. Time-window queries are indexed and bounded. Raw checks have configurable scheduled retention.
+PostgreSQL is authoritative. Flyway is active from Phase 1 and performs incremental migrations; Hibernate validates rather than creates schema. The empty foundation schema intentionally has no placeholder migration. Phase 2 introduces the first domain migration. State history will provide authoritative transition intervals, while checks provide observation and latency detail. Time-window queries will be indexed and bounded. Raw checks will have configurable scheduled retention.
 
 ## Real-time delivery — planned
 

@@ -29,8 +29,7 @@ npm test
 npm run build
 
 cd ..
-docker compose config
-docker compose build
+docker compose -f docker-compose.dev.yml config --quiet
 ```
 
 POSIX:
@@ -46,8 +45,7 @@ npm test
 npm run build
 
 cd ..
-docker compose config
-docker compose build
+docker compose -f docker-compose.dev.yml config --quiet
 ```
 
 Never report a check as passing when it did not run.
@@ -63,4 +61,4 @@ Never report a check as passing when it did not run.
 
 ## Current checkpoint
 
-Phase 0 (bootstrap) is the only work permitted in the initial specification session. After its commit, stop. A fresh session should inspect this file, `docs/PROJECT_SPEC.md`, `docs/ARCHITECTURE.md`, Git status/history, and then begin Phase 1.
+Phase 1 establishes the runnable backend/frontend foundation, local PostgreSQL, Flyway, and CI. After its verified commit, Phase 2 is next: implement the monitoring core through its review gate without pulling later-phase UI or authentication work forward.
