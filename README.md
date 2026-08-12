@@ -3,7 +3,7 @@
 HomeLab Monitor is a self-hosted application for tracking the availability, latency, reliability, and incidents of HTTP/HTTPS and TCP services on a home network.
 
 > [!IMPORTANT]
-> The repository is at the Phase 0 bootstrap checkpoint. Product code and runnable containers begin in Phase 1; the capabilities below describe the version 1 target and are not yet implemented.
+> The repository contains the verified Phase 1 application foundation. Monitoring, authentication, and production deployment remain planned; the capabilities below describe the version 1 target.
 
 ## Version 1 scope
 
@@ -18,7 +18,7 @@ HomeLab Monitor is a self-hosted application for tracking the availability, late
 
 Vendor-specific integrations, notifications, public status pages, and multi-user access are roadmap items rather than version 1 requirements.
 
-## Planned architecture
+## Architecture
 
 HomeLab Monitor will be a modular monolith: a Spring Boot backend, React frontend, and PostgreSQL database deployed as three Docker Compose services. This keeps deployment simple while preserving clear feature boundaries.
 
@@ -35,8 +35,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design constraints and deci
 ## Repository layout
 
 ```text
-backend/           Spring Boot application (Phase 1)
-frontend/          React application (Phase 1)
+backend/           Spring Boot application
+frontend/          React application
 docs/              Product, architecture, deployment, and ADR documentation
 .codex/            Project-scoped Codex and reviewer configuration
 .github/           Contribution templates
@@ -44,9 +44,9 @@ docs/              Product, architecture, deployment, and ADR documentation
 
 ## Development status
 
-Phase 0 is complete when the bootstrap branch contains durable project instructions, architecture and deployment skeletons, contribution templates, and validated Codex agent configuration. No application build commands are available until Phase 1 creates the Maven and npm projects.
+Phase 1 provides a Java 21/Spring Boot backend, React/TypeScript frontend, local PostgreSQL Compose service, Flyway integration, and CI checks. The foundation page reports backend health; monitor features begin in Phase 2.
 
-The authoritative requirements and phase status live in [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md).
+For a local development run, follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). The authoritative requirements and phase status live in [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md).
 
 ## Security model
 

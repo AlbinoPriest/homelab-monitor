@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: HomeLab Monitor
+  datasource:
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:homelab_monitor}
+    username: ${POSTGRES_USER:homelab_monitor}
+    password: ${POSTGRES_PASSWORD:homelab_monitor_dev}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+springdoc:
+  api-docs:
+    enabled: false

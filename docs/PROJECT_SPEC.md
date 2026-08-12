@@ -7,7 +7,7 @@ This document is the durable source of product requirements and delivery status.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 0 | Repository, durable docs, Codex agents, templates | Complete (`1ed1196` on `codex/chore/project-bootstrap`) |
-| 1 | Backend/frontend foundation, PostgreSQL, Flyway, development Docker, CI | Not started |
+| 1 | Backend/frontend foundation, PostgreSQL, Flyway, development Docker, CI | Complete (`9901b60`–`d1be14e`; backend and DevOps review passed) |
 | 2 | Monitor CRUD, checks, executors, scheduler, state engine, history | Not started |
 | 3 | Dashboard and monitor-management UI/API | Not started |
 | 4 | First-owner setup and session authentication | Not started |
@@ -199,4 +199,4 @@ Multi-user/RBAC, ICMP, SNMP, Proxmox, Home Assistant, Docker Engine, Tailscale, 
 
 ## Next checkpoint
 
-Start a fresh Codex session so project-scoped agent configuration is loaded. Read `AGENTS.md`, this file, `docs/ARCHITECTURE.md`, and Git status/history. Then perform Phase 1 only through its definition of done, including backend and DevOps review, before deciding whether to continue.
+Begin Phase 2 from the clean `codex/feat/project-foundation` checkpoint. Implement monitor CRUD, HTTP/TCP execution, scheduling, the status engine, and history through backend, QA, architecture/concurrency, and SSRF security review. Do not pull Phase 3 UI or Phase 4 authentication into the monitoring-core phase.
