@@ -15,13 +15,16 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @Import(TestcontainersConfiguration.class)
 @AutoConfigureMockMvc
-@SpringBootTest
+@SpringBootTest(properties = "homelab-monitor.scheduling.enabled=false")
 class HomeLabMonitorApplicationTests {
-	@Autowired
-	private Flyway flyway;
+	private final Flyway flyway;
+	private final MockMvc mockMvc;
 
 	@Autowired
-	private MockMvc mockMvc;
+	HomeLabMonitorApplicationTests(Flyway flyway, MockMvc mockMvc) {
+		this.flyway = flyway;
+		this.mockMvc = mockMvc;
+	}
 
 	@Test
 	void startsWithPostgresAndValidatesFlywayConfiguration() {

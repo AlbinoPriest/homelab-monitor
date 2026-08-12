@@ -25,13 +25,13 @@ flowchart LR
 
 Docker Compose will run the proxy/frontend, backend, and database. Only the proxy/frontend should be public in production; PostgreSQL remains internal.
 
-## Backend module direction — planned
+## Backend module direction
 
-Feature-oriented modules will cover `auth`, `user`, `monitor`, `incident`, `analytics`, `realtime`, and a small `common` area. Modules should expose narrow application-facing services and avoid a mechanical enterprise layering scheme. A notification module must not exist until notifications are implemented.
+The implemented `monitor` feature owns monitor configuration, execution, scheduling, checks, and state history. Later phases add `auth`, `user`, `incident`, `analytics`, and `realtime`; `common` remains small. Modules expose narrow application-facing services and avoid a mechanical enterprise layering scheme. A notification module must not exist until notifications are implemented.
 
 Controllers exchange DTOs, application services own use-case/transaction boundaries, and persistence entities remain internal. The backend owns all status and incident decisions.
 
-## Monitor execution — planned
+## Monitor execution
 
 ```mermaid
 flowchart TD
@@ -46,7 +46,11 @@ flowchart TD
     State --> Event["Publish post-commit SSE event"]
 ```
 
-Phase 2 must settle the precise locking/serialization mechanism. It must prevent overlap for one monitor without permanent per-monitor threads and preserve correct ordering across manual and scheduled checks, disable/delete, and restart. Prefer a bounded executor and understandable database/application safeguards over distributed coordination.
+Phase 2 uses a bounded scheduled worker pool (8 threads, queue capacity 92) and a JVM-local atomic in-flight set keyed by monitor UUID. Manual checks use a separate four-thread, zero-queue executor, so they start immediately or return `409` without waiting behind scheduled work. The coordinator claims a monitor before work enters either pool, so scheduled/manual collisions return or skip without overlapping network work. There is no permanent thread per monitor and no distributed lock because version 1 is single-instance.
+
+Network execution occurs outside a database transaction. It captures the monitor's optimistic version, then completion obtains a pessimistic row lock and accepts the result only when the row still exists, remains enabled, and has the same version. This serializes competing transitions and discards stale results after configuration changes, pause, or delete. Persisting the check, state counters, transition history, and next due time is one transaction.
+
+`next_check_at` is persisted. A restart loses only the ephemeral in-flight set; overdue enabled monitors are discovered again. Interval updates set the next check due immediately under the new configuration. Shutdown waits up to 35 seconds for workers, while monitor timeouts are bounded at 30 seconds.
 
 ## State and availability semantics — required
 
@@ -66,18 +70,19 @@ Phase 5/6 must choose and test a deterministic freshness formula based on interv
 
 The offline rule needs architecture review because blindly expiring a confirmed outage can hide it, while carrying it through monitor-process downtime can fabricate downtime. The implementation must preserve confirmed incident facts but represent unobserved intervals honestly. The chosen transition and restart reconstruction rules must be documented here before Phase 6 is complete.
 
-## Security boundaries — planned
+## Security boundaries
 
 The owner can intentionally monitor private network services. Therefore target fetching is a privileged feature, not a public URL-preview service.
 
 - Only the authenticated owner may configure or trigger monitors after setup.
-- HTTP accepts only `http` and `https`, bounds redirects/body reads/timeouts, and does not persist response bodies.
-- TCP validates host, port, and timeout.
+- HTTP accepts only absolute `http` and `https` URLs without user information or fragments, manually follows at most three redirects, revalidates each destination, closes response streams without retaining bodies, and enforces an overall timeout.
+- TCP validates host, port, and timeout and uses Java socket APIs directly. DNS resolution runs on a separate two-thread bounded pool and shares the check's end-to-end deadline, so a slow system resolver cannot consume the monitor worker pool indefinitely.
 - No target input reaches a shell.
 - API errors and logs omit secrets and internal exception details.
 - Session cookies, CSRF, CORS/same-origin behavior, Actuator exposure, and reverse-proxy headers require dedicated review in Phases 4 and 8.
 
-Private IP addresses remain allowed by design. Documentation and UI must not suggest that untrusted users can safely receive configuration access.
+Private IP addresses remain allowed by design. Phase 2 APIs are not yet authenticated, so this development checkpoint must not be exposed to untrusted networks. Phase 4 makes monitor configuration and manual execution owner-only.
+Until then, the backend binds to `127.0.0.1` and accepts only `localhost`, `127.0.0.1`, and `[::1]` Host headers by default, preventing browser DNS-rebinding access. `SERVER_ADDRESS` and matching `ALLOWED_HOSTS` values are explicit opt-in overrides for trusted remote development only.
 
 ## Data and migrations
 

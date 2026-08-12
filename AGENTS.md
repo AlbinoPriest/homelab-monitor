@@ -61,4 +61,4 @@ Never report a check as passing when it did not run.
 
 ## Current checkpoint
 
-Phase 1 establishes the runnable backend/frontend foundation, local PostgreSQL, Flyway, and CI. After its verified commit, Phase 2 is next: implement the monitoring core through its review gate without pulling later-phase UI or authentication work forward.
+Phase 2 establishes monitor CRUD, bounded HTTP/TCP checks, scheduling, authoritative state transitions, and paginated history. After its verified commit, Phase 3 is next: build the dashboard and monitor-management experience without pulling Phase 4 authentication work forward.
