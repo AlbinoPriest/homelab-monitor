@@ -1,14 +1,28 @@
 # Architecture
 
-This document records durable constraints and the current design. The Phase 1 application foundation is implemented; sections marked **Planned** describe later phases.
+This document records durable constraints and the current design. The monitoring core and Phase 3 management interface are implemented; sections marked **Planned** describe later phases.
 
 ## Implemented foundation
 
 - The Java 21/Spring Boot modular monolith starts with Spring MVC, Data JPA, Validation, Security, Actuator, and development-only OpenAPI support.
 - PostgreSQL is the application database. Flyway owns schema evolution and Hibernate uses `ddl-auto=validate`; domain migrations begin with Phase 2.
-- The React/TypeScript application uses Vite, React Router, and TanStack Query. Its foundation screen exercises the proxied backend health endpoint.
+- The React/TypeScript application uses Vite, React Router, and TanStack Query. The dashboard and service-management routes consume the versioned monitor APIs through the same-origin development proxy.
 - Development runs PostgreSQL in Docker Compose while backend and frontend run directly. Production container topology remains Phase 8 work.
-- Until Phase 4 adds owner authentication, the foundation security chain permits requests and provides no user accounts. There are no mutation or domain APIs in this phase; CSRF protection remains enabled.
+- Until Phase 4 adds owner authentication, the development security chain permits requests and provides no user accounts. Monitor mutations require CSRF protection, and loopback binding plus Host validation keep this checkpoint local-only.
+
+## Frontend application
+
+The Phase 3 UI treats the backend monitor status as authoritative. TanStack Query owns server state and
+invalidates monitor, check, and history queries after mutations; the frontend does not predict status
+transitions. React Router provides dashboard, service inventory, and service-detail routes. The inventory
+performs local search, status filtering, and sorting because the version 1 design target is approximately
+100 monitors.
+
+Forms adapt between HTTP and TCP fields and share the backend's documented bounds. Deliberate mutations
+show inline success or safe error feedback, destructive deletion requires confirmation, dialogs restore
+focus and close with Escape, and all status presentations retain a text label at every breakpoint.
+Incident, uptime, and latency analytics are intentionally not fabricated from raw check counts; their UI
+surfaces remain deferred until the authoritative Phase 5/6 APIs exist.
 
 ## System context — planned
 
