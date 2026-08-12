@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a focused improvement aligned with the current project phase.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for proposing an improvement. Roadmap features should not displace version 1 core quality.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or goal
+      description: What real user or engineering problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable outcomes that define completion.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Relevant constraints
+      description: Note security, compatibility, architecture, or deployment constraints.
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Version 1 core
+        - Roadmap / future
+        - Unsure
+    validations:
+      required: true
