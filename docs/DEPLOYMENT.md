@@ -28,6 +28,7 @@ npm run dev
 ```
 
 The frontend is served at `http://localhost:5173` and proxies `/actuator` and future `/api` calls to the backend at `http://localhost:8080`. Development OpenAPI JSON is available at `http://localhost:8080/v3/api-docs`.
+The unauthenticated development backend binds to `127.0.0.1` and validates loopback Host headers by default. Set `SERVER_ADDRESS` and a matching comma-separated `ALLOWED_HOSTS` value only when intentionally exposing it on a trusted network; owner authentication is not implemented until Phase 4.
 
 ## Development on POSIX
 

@@ -14,6 +14,6 @@ HomeLab Monitor has not released a supported application version yet. This polic
 
 Version 1 is a single-owner, self-hosted application. The owner can configure HTTP and TCP requests to private network targets. That is intentional and means configuration access is privileged.
 
-The planned application will require strict URL/protocol validation, bounded redirects and response reads, transport timeouts, safe errors, session authentication, CSRF protection, secure cookies, secret-free logs, restricted Actuator exposure, and internal-only database networking. Never expose an unfinished or unauthenticated deployment to untrusted networks.
+The monitoring core enforces URL/protocol validation, bounded and revalidated redirects, closed response streams, end-to-end transport/DNS timeouts, structured safe errors, CSRF protection, restricted Actuator exposure, and loopback-only development backend/database networking. Session authentication, secure production cookies, and production network hardening remain Phase 4/8 work. Never expose an unfinished or unauthenticated deployment to untrusted networks.
 
 Do not commit `.env`, credentials, tokens, private keys, or real monitored URLs containing sensitive information.
