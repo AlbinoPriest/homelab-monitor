@@ -1,5 +1,24 @@
-# Frontend
+# HomeLab Monitor frontend
 
-The React / TypeScript / Vite frontend will be created in Phase 1. No frontend application exists at the Phase 0 checkpoint.
+React, TypeScript, Vite, React Router, and TanStack Query frontend for HomeLab Monitor.
 
-See `../docs/PROJECT_SPEC.md` and `../docs/ARCHITECTURE.md` before scaffolding it.
+## Run locally
+
+Use Node.js 24 and npm 11 or newer. Start the backend first, then:
+
+```bash
+npm ci
+npm run dev
+```
+
+Vite proxies `/api` and `/actuator` to `http://localhost:8080`.
+
+## Verify
+
+```bash
+npm ci
+npm run lint
+npm test
+npm run build
+npm run format:check
+```
