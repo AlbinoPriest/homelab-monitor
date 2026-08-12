@@ -61,4 +61,4 @@ Never report a check as passing when it did not run.
 
 ## Current checkpoint
 
-Phase 2 establishes monitor CRUD, bounded HTTP/TCP checks, scheduling, authoritative state transitions, and paginated history. After its verified commit, Phase 3 is next: build the dashboard and monitor-management experience without pulling Phase 4 authentication work forward.
+Phase 3 establishes the responsive dashboard, service inventory and detail views, adaptive monitor forms, and deliberate management actions. After its verified commit, Phase 4 is next: implement first-owner setup and session authentication without pulling incident or analytics work forward.
