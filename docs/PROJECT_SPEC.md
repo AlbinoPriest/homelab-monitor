@@ -6,7 +6,7 @@ This document is the durable source of product requirements and delivery status.
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| 0 | Repository, durable docs, Codex agents, templates | In progress on `codex/chore/project-bootstrap` |
+| 0 | Repository, durable docs, Codex agents, templates | Complete (`1ed1196` on `codex/chore/project-bootstrap`) |
 | 1 | Backend/frontend foundation, PostgreSQL, Flyway, development Docker, CI | Not started |
 | 2 | Monitor CRUD, checks, executors, scheduler, state engine, history | Not started |
 | 3 | Dashboard and monitor-management UI/API | Not started |
