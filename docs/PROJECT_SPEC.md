@@ -8,7 +8,7 @@ This document is the durable source of product requirements and delivery status.
 | --- | --- | --- |
 | 0 | Repository, durable docs, Codex agents, templates | Complete (`1ed1196` on `codex/chore/project-bootstrap`) |
 | 1 | Backend/frontend foundation, PostgreSQL, Flyway, development Docker, CI | Complete (`9901b60`–`d1be14e`; backend and DevOps review passed) |
-| 2 | Monitor CRUD, checks, executors, scheduler, state engine, history | Not started |
+| 2 | Monitor CRUD, checks, executors, scheduler, state engine, history | Complete (`bbfbc81`; verification, smoke test, and review gates passed) |
 | 3 | Dashboard and monitor-management UI/API | Not started |
 | 4 | First-owner setup and session authentication | Not started |
 | 5 | Thresholds, incidents, degraded state, pause/freshness reliability | Not started |
@@ -199,4 +199,4 @@ Multi-user/RBAC, ICMP, SNMP, Proxmox, Home Assistant, Docker Engine, Tailscale, 
 
 ## Next checkpoint
 
-Begin Phase 2 from the clean `codex/feat/project-foundation` checkpoint. Implement monitor CRUD, HTTP/TCP execution, scheduling, the status engine, and history through backend, QA, architecture/concurrency, and SSRF security review. Do not pull Phase 3 UI or Phase 4 authentication into the monitoring-core phase.
+Begin Phase 3 from the verified Phase 2 monitoring-core checkpoint. Build the dashboard and monitor-management UI/API through frontend and QA review, using the existing versioned monitor, check, and history endpoints. Do not pull Phase 4 authentication into the dashboard phase.
