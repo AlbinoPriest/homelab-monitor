@@ -11,7 +11,7 @@ This document is the durable source of product requirements and delivery status.
 | 2 | Monitor CRUD, checks, executors, scheduler, state engine, history | Complete (`bbfbc81`; verification, smoke test, and review gates passed) |
 | 3 | Dashboard and monitor-management UI/API | Complete (`ed43be6`; verification, responsive browser smoke test, and review gates passed) |
 | 4 | First-owner setup and session authentication | Complete (`c88579f`; verification, browser smoke test, and review gates passed) |
-| 5 | Thresholds, incidents, degraded state, pause/freshness reliability | Not started |
+| 5 | Thresholds, incidents, degraded state, pause/freshness reliability | Complete (verification, responsive browser smoke test, and review gates passed) |
 | 6 | Duration-based metrics, latency analytics, retention | Not started |
 | 7 | Authenticated Server-Sent Events | Not started |
 | 8 | Production Docker and security/deployment hardening | Not started |

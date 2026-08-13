@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resetCsrfForTests } from './api'
 import { App } from './App'
-import type { Monitor } from './types'
+import type { Incident, Monitor } from './types'
 
 const monitor: Monitor = {
   id: '9d8d235c-949c-4a78-882e-7783cf45845b',
@@ -25,6 +25,7 @@ const monitor: Monitor = {
   consecutiveFailures: 0,
   consecutiveSuccesses: 4,
   nextCheckAt: '2030-01-01T00:01:00Z',
+  lastCheckedAt: '2030-01-01T00:00:00Z',
   createdAt: '2030-01-01T00:00:00Z',
   updatedAt: '2030-01-01T00:00:00Z',
 }
@@ -174,6 +175,8 @@ describe('monitoring dashboard', () => {
       }
       if (url.includes('/history'))
         return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+      if (url.includes('/incidents'))
+        return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
       return response(monitor)
     })
     renderApp(`/services/${monitor.id}`)
@@ -194,6 +197,8 @@ describe('monitoring dashboard', () => {
       if (url.includes('/checks') || url.includes('/history')) {
         return response({ detail: 'Unavailable' }, 503)
       }
+      if (url.includes('/incidents'))
+        return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
       return response(monitor)
     })
     renderApp(`/services/${monitor.id}`)
@@ -210,6 +215,8 @@ describe('monitoring dashboard', () => {
       if (url.includes('/checks')) {
         return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
       }
+      if (url.includes('/incidents'))
+        return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
       return response(monitor)
     })
     renderApp(`/services/${monitor.id}`)
@@ -229,6 +236,8 @@ describe('monitoring dashboard', () => {
       if (url.includes('/checks') || url.includes('/history')) {
         return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
       }
+      if (url.includes('/incidents'))
+        return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
       return response(monitor)
     })
     renderApp(`/services/${monitor.id}`)
@@ -272,6 +281,134 @@ describe('monitoring dashboard', () => {
         headers: expect.objectContaining({ 'X-XSRF-TOKEN': 'setup-token' }),
       }),
     )
+  })
+
+  it('lists active incidents with their monitor and supports status filtering', async () => {
+    const incident: Incident = {
+      id: 'incident-1',
+      monitorId: monitor.id,
+      status: 'ACTIVE',
+      outageReason: 'CONNECTION_REFUSED',
+      resolutionReason: null,
+      startedAt: '2030-01-01T00:02:00Z',
+      endedAt: null,
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input)
+      if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/incidents')) {
+        if (url.includes('status=ACTIVE')) {
+          return response({
+            content: [incident],
+            page: 0,
+            size: 1,
+            totalElements: 1,
+            totalPages: 1,
+          })
+        }
+        const page = url.includes('page=1') ? 1 : 0
+        return response({
+          content: [incident],
+          page,
+          size: 20,
+          totalElements: 21,
+          totalPages: 2,
+        })
+      }
+      return response([monitor])
+    })
+    renderApp('/incidents')
+    expect(await screen.findByRole('heading', { name: 'Incidents' })).toBeInTheDocument()
+    expect(await screen.findByText('NAS dashboard')).toBeInTheDocument()
+    expect(screen.getByText('connection refused')).toBeInTheDocument()
+    expect(screen.getByText('Ongoing')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('page=1'), expect.anything()),
+    )
+    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument()
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Filter incidents' }),
+      'RESOLVED',
+    )
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('status=RESOLVED'),
+        expect.anything(),
+      ),
+    )
+  })
+
+  it('pages through incident history on a service detail', async () => {
+    const incident: Incident = {
+      id: 'incident-1',
+      monitorId: monitor.id,
+      status: 'RESOLVED',
+      outageReason: 'TIMEOUT',
+      resolutionReason: 'RECOVERED',
+      startedAt: '2030-01-01T00:02:00Z',
+      endedAt: '2030-01-01T00:03:00Z',
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input)
+      if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/incidents')) {
+        const page = url.includes('page=1') ? 1 : 0
+        return response({ content: [incident], page, size: 10, totalElements: 11, totalPages: 2 })
+      }
+      if (url.includes('/checks') || url.includes('/history')) {
+        return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+      }
+      return response(monitor)
+    })
+
+    renderApp(`/services/${monitor.id}`)
+    expect(await screen.findByText('Page 1 of 2')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('page=1'), expect.anything()),
+    )
+    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument()
+  })
+
+  it('returns to the last incident page when a background update empties the current page', async () => {
+    const incident: Incident = {
+      id: 'incident-1',
+      monitorId: monitor.id,
+      status: 'RESOLVED',
+      outageReason: 'TIMEOUT',
+      resolutionReason: 'RECOVERED',
+      startedAt: '2030-01-01T00:02:00Z',
+      endedAt: '2030-01-01T00:03:00Z',
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input)
+      if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/incidents')) {
+        if (url.includes('status=ACTIVE')) {
+          return response({ content: [], page: 0, size: 1, totalElements: 0, totalPages: 0 })
+        }
+        if (url.includes('page=1')) {
+          return response({ content: [], page: 1, size: 20, totalElements: 1, totalPages: 1 })
+        }
+        return response({
+          content: [incident],
+          page: 0,
+          size: 20,
+          totalElements: 21,
+          totalPages: 2,
+        })
+      }
+      return response([monitor])
+    })
+
+    renderApp('/incidents')
+    await userEvent.click(await screen.findByRole('button', { name: 'Next' }))
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('page=1'), expect.anything()),
+    )
+    expect(await screen.findByText('Page 1 of 2')).toBeInTheDocument()
+    expect(screen.queryByText('Page 2 of 1')).not.toBeInTheDocument()
   })
 
   it('shows a generic login error without entering the application', async () => {

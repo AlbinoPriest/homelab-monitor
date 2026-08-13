@@ -1,6 +1,8 @@
 package dev.homelabmonitor.monitor;
 
 import dev.homelabmonitor.common.web.PageResponse;
+import dev.homelabmonitor.incident.IncidentResolutionReason;
+import dev.homelabmonitor.incident.IncidentService;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -18,18 +20,21 @@ class MonitorService {
 	private final MonitorStateHistoryRepository historyRepository;
 	private final MonitorRequestValidator validator;
 	private final Clock clock;
+	private final IncidentService incidentService;
 
 	MonitorService(
 			MonitorRepository monitorRepository,
 			MonitorCheckRepository checkRepository,
 			MonitorStateHistoryRepository historyRepository,
 			MonitorRequestValidator validator,
-			Clock clock) {
+			Clock clock,
+			IncidentService incidentService) {
 		this.monitorRepository = monitorRepository;
 		this.checkRepository = checkRepository;
 		this.historyRepository = historyRepository;
 		this.validator = validator;
 		this.clock = clock;
+		this.incidentService = incidentService;
 	}
 
 	@Transactional
@@ -66,6 +71,9 @@ class MonitorService {
 					? StateChangeReason.MONITORING_PAUSED
 					: wasEnabled ? StateChangeReason.CONFIGURATION_CHANGED : StateChangeReason.MONITORING_RESUMED;
 			historyRepository.save(MonitorStateHistory.create(monitor, previous, monitor.status(), now, reason));
+		}
+		if (previous == MonitorStatus.OFFLINE && !monitor.enabled()) {
+			incidentService.resolve(monitor.id(), IncidentResolutionReason.MONITORING_PAUSED, now);
 		}
 		return MonitorResponse.from(monitor);
 	}

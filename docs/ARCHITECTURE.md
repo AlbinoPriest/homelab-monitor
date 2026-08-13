@@ -1,6 +1,6 @@
 # Architecture
 
-This document records durable constraints and the current design. The monitoring core, management interface, and Phase 4 owner authentication are implemented; sections marked **Planned** describe later phases.
+This document records durable constraints and the current design. The monitoring core, management interface, owner authentication, and Phase 5 incident/reliability behavior are implemented; sections marked **Planned** describe later phases.
 
 ## Implemented foundation
 
@@ -21,8 +21,8 @@ performs local search, status filtering, and sorting because the version 1 desig
 Forms adapt between HTTP and TCP fields and share the backend's documented bounds. Deliberate mutations
 show inline success or safe error feedback, destructive deletion requires confirmation, dialogs restore
 focus and close with Escape, and all status presentations retain a text label at every breakpoint.
-Incident, uptime, and latency analytics are intentionally not fabricated from raw check counts; their UI
-surfaces remain deferred until the authoritative Phase 5/6 APIs exist.
+Incident history is rendered from the authoritative incident API. Uptime and latency analytics are
+intentionally not fabricated from raw check counts and remain deferred until the Phase 6 APIs exist.
 
 Before rendering application routes, the frontend resolves authentication status and presents either the
 one-time owner setup or login form. A successful setup signs the owner in. A protected API `401` refreshes
@@ -45,7 +45,7 @@ Docker Compose will run the proxy/frontend, backend, and database. Only the prox
 
 ## Backend module direction
 
-The implemented `monitor` feature owns monitor configuration, execution, scheduling, checks, and state history. Later phases add `auth`, `user`, `incident`, `analytics`, and `realtime`; `common` remains small. Modules expose narrow application-facing services and avoid a mechanical enterprise layering scheme. A notification module must not exist until notifications are implemented.
+The implemented `monitor` feature owns monitor configuration, execution, scheduling, checks, state history, and freshness. `auth` owns the singleton owner/session boundary, while `incident` owns outage lifecycle and queries. Later phases add `analytics` and `realtime`; `common` remains small. Modules expose narrow application-facing services and avoid a mechanical enterprise layering scheme. A notification module must not exist until notifications are implemented.
 
 Controllers exchange DTOs, application services own use-case/transaction boundaries, and persistence entities remain internal. The backend owns all status and incident decisions.
 
@@ -80,13 +80,45 @@ Network execution occurs outside a database transaction. It captures the monitor
 
 Reachable results reset failure progress. While offline, consecutive reachable results satisfy recovery and resolve to online or degraded based on the latest result. Pausing resolves an active incident as `MONITORING_PAUSED`; normal threshold recovery uses `RECOVERED`. Re-enable always returns to unknown.
 
+Exactly one active incident may exist per monitor. It opens in the same locked transaction that first
+transitions the monitor to offline. Repeated failures do not duplicate it. Enabled configuration changes
+preserve a confirmed offline state and reset recovery progress, so they cannot orphan the incident or
+bypass its recovery threshold. Deleting a monitor cascades its incident history.
+
 Uptime is derived from state durations, never check counts. Online/degraded durations are available, offline durations unavailable, and paused/unknown durations excluded.
 
-## Observation freshness — decision deferred to implementation phase
+## Observation freshness
 
-Phase 5/6 must choose and test a deterministic freshness formula based on interval, timeout, and scheduler tolerance. Reachable state cannot be carried indefinitely after observations stop.
+Each accepted check persists `last_checked_at` and the calculated validity boundary on both the check and
+monitor. Keeping the boundary with historical checks prevents later configuration edits from changing the
+meaning of past observation windows. A reachable `ONLINE` or `DEGRADED` observation expires at:
 
-The offline rule needs architecture review because blindly expiring a confirmed outage can hide it, while carrying it through monitor-process downtime can fabricate downtime. The implementation must preserve confirmed incident facts but represent unobserved intervals honestly. The chosen transition and restart reconstruction rules must be documented here before Phase 6 is complete.
+```text
+last checked + monitor interval + monitor timeout + max(5 seconds, 2 × scheduler scan delay)
+```
+
+Queued work is tracked separately from running work, so queued checks neither overlap nor suppress freshness.
+The scanner claims the same per-monitor running gate as an executing check and obtains the same pessimistic
+monitor lock used by completion before moving stale reachable state to `UNKNOWN`, recording the transition at
+the computed expiry instant rather than the later scan time.
+Check completion performs the same expiry reconciliation under that lock before applying a new result. This
+preserves a real unobserved gap after a restart or a delayed worker even when the new check wins the lock; the
+newly completed check then establishes fresh state again.
+
+Expiry also clears incomplete threshold evidence: `UNKNOWN` failure progress and `OFFLINE` recovery progress
+cannot bridge an unobserved gap. The confirmed offline status and its active incident remain intact; only a
+fresh consecutive recovery sequence may resolve them.
+
+For checks created before this boundary was persisted, the Phase 5 migration uses `checked_at` itself as the
+validity boundary. This deliberately treats legacy coverage as unknown instead of retrospectively guessing
+from a monitor's current configuration or today's scheduler tolerance.
+
+A confirmed `OFFLINE` state does not expire automatically: doing so would hide a known unresolved outage
+and could bypass its recovery threshold. Its incident remains active until threshold recovery or pause.
+Phase 6 duration metrics must nevertheless cap observed outage contribution at the freshness boundary and
+report the later unobserved interval as unknown rather than fabricating downtime. This separates the
+operational fact “recovery has not been observed” from claims about availability while the monitor was not
+running.
 
 ## Security boundaries
 
@@ -111,7 +143,7 @@ lockout. Phase 8 must explicitly define trusted reverse-proxy source-address han
 
 ## Data and migrations
 
-PostgreSQL is authoritative. Flyway is active from Phase 1 and performs incremental migrations; Hibernate validates rather than creates schema. The empty foundation schema intentionally has no placeholder migration. Phase 2 introduces the first domain migration. State history will provide authoritative transition intervals, while checks provide observation and latency detail. Time-window queries will be indexed and bounded. Raw checks will have configurable scheduled retention.
+PostgreSQL is authoritative. Flyway is active from Phase 1 and performs incremental migrations; Hibernate validates rather than creates schema. State history provides authoritative transition intervals, checks provide observation and latency detail, and incidents preserve confirmed outage lifecycles. The Phase 5 migration backfills last-check timestamps and active incidents for existing offline monitors. Time-window queries are indexed and bounded. Raw-check retention remains Phase 6 work.
 
 ## Real-time delivery — planned
 

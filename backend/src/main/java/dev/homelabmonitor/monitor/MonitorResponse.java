@@ -21,6 +21,7 @@ public record MonitorResponse(
 		int consecutiveFailures,
 		int consecutiveSuccesses,
 		Instant nextCheckAt,
+		Instant lastCheckedAt,
 		Instant createdAt,
 		Instant updatedAt) {
 
@@ -30,6 +31,7 @@ public record MonitorResponse(
 				monitor.port(), monitor.enabled(), monitor.status(), monitor.intervalSeconds(),
 				monitor.timeoutMillis(), monitor.failureThreshold(), monitor.recoveryThreshold(),
 				monitor.latencyWarningMillis(), monitor.expectedHttpStatus(), monitor.consecutiveFailures(),
-				monitor.consecutiveSuccesses(), monitor.nextCheckAt(), monitor.createdAt(), monitor.updatedAt());
+				monitor.consecutiveSuccesses(), monitor.nextCheckAt(), monitor.lastCheckedAt(),
+				monitor.createdAt(), monitor.updatedAt());
 	}
 }

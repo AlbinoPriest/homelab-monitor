@@ -17,6 +17,7 @@ The API is rooted at `/api/v1`. OpenAPI JSON is available only with the `dev` Sp
 | `POST` | `/api/v1/monitors/{id}/checks` | Run one manual check; returns `409` if one is already in flight |
 | `GET` | `/api/v1/monitors/{id}/checks?page=0&size=50` | Read newest checks; size is bounded to 100 |
 | `GET` | `/api/v1/monitors/{id}/history?page=0&size=50` | Read newest state transitions; size is bounded to 100 |
+| `GET` | `/api/v1/incidents?monitorId=&status=&page=0&size=50` | Read newest incidents, optionally filtered by monitor and `ACTIVE`/`RESOLVED` status |
 
 Mutating endpoints require the CSRF token from `/api/v1/csrf` in the returned header name. Monitor APIs and logout require an authenticated owner session. Auth status, the CSRF bootstrap, setup, and login are public; setup returns `409` after the singleton owner has been created. Authentication failures deliberately use a generic message.
 Login attempts are bounded over an expiring window; excess attempts return generic `429` responses with a `Retry-After` header.
@@ -24,3 +25,5 @@ Login attempts are bounded over an expiring window; excess attempts return gener
 HTTP monitors put any explicit port in `target`, such as `https://server.example:8443/health`, and default `expectedHttpStatus` to `200`. TCP monitors use a hostname/IP `target` plus a required `port`. Intervals range from 5 seconds to 24 hours and timeouts from 100 milliseconds to 30 seconds.
 
 Checks return one of `SUCCESS`, `TIMEOUT`, `DNS_FAILURE`, `CONNECTION_REFUSED`, `TLS_ERROR`, `UNEXPECTED_STATUS`, `INVALID_TARGET`, or `UNKNOWN_FAILURE`. Error messages are safe summaries rather than raw exception text.
+
+Monitor responses include `lastCheckedAt`. Reachable state becomes `UNKNOWN` when that observation exceeds the documented freshness window. Incident responses include their outage reason and either an active lifecycle or an end timestamp with `RECOVERED`/`MONITORING_PAUSED` resolution.

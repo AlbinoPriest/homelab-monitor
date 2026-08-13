@@ -1,5 +1,8 @@
 package dev.homelabmonitor.monitor;
 
+import dev.homelabmonitor.incident.IncidentResolutionReason;
+import dev.homelabmonitor.incident.IncidentOutageReason;
+import dev.homelabmonitor.incident.IncidentService;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -12,16 +15,22 @@ class MonitorExecutionPersistence {
 	private final MonitorCheckRepository checkRepository;
 	private final MonitorStateHistoryRepository historyRepository;
 	private final MonitorStateEngine stateEngine;
+	private final MonitorFreshness freshness;
+	private final IncidentService incidentService;
 
 	MonitorExecutionPersistence(
 			MonitorRepository monitorRepository,
 			MonitorCheckRepository checkRepository,
 			MonitorStateHistoryRepository historyRepository,
-			MonitorStateEngine stateEngine) {
+			MonitorStateEngine stateEngine,
+			MonitorFreshness freshness,
+			IncidentService incidentService) {
 		this.monitorRepository = monitorRepository;
 		this.checkRepository = checkRepository;
 		this.historyRepository = historyRepository;
 		this.stateEngine = stateEngine;
+		this.freshness = freshness;
+		this.incidentService = incidentService;
 	}
 
 	@Transactional(readOnly = true)
@@ -52,14 +61,32 @@ class MonitorExecutionPersistence {
 			return Optional.empty();
 		}
 
+		expirePriorObservation(monitor, result.checkedAt());
 		MonitorStatus previous = monitor.status();
 		StateTransition transition = stateEngine.apply(monitor, result);
-		MonitorCheck check = checkRepository.save(MonitorCheck.from(monitor, result));
-		monitor.applyTransition(transition, result.checkedAt());
+		java.time.Instant validUntil = freshness.validUntil(monitor, result.checkedAt());
+		MonitorCheck check = checkRepository.save(MonitorCheck.from(monitor, result, validUntil));
+		monitor.applyTransition(transition, result.checkedAt(), validUntil);
 		if (transition.status() != previous) {
 			historyRepository.save(MonitorStateHistory.create(
 					monitor, previous, transition.status(), result.checkedAt(), transition.reason()));
 		}
+		if (previous != MonitorStatus.OFFLINE && transition.status() == MonitorStatus.OFFLINE) {
+			incidentService.open(monitor.id(), IncidentOutageReason.valueOf(result.type().name()), result.checkedAt());
+		} else if (previous == MonitorStatus.OFFLINE && transition.status() != MonitorStatus.OFFLINE) {
+			incidentService.resolve(monitor.id(), IncidentResolutionReason.RECOVERED, result.checkedAt());
+		}
 		return Optional.of(MonitorCheckResponse.from(check));
+	}
+
+	private void expirePriorObservation(Monitor monitor, java.time.Instant checkedAt) {
+		if (!freshness.isStale(monitor, checkedAt)) return;
+		MonitorStatus previous = monitor.status();
+		java.time.Instant expiredAt = freshness.expiresAt(monitor);
+		monitor.expireEvidence(expiredAt);
+		if (previous == MonitorStatus.ONLINE || previous == MonitorStatus.DEGRADED) {
+			historyRepository.save(MonitorStateHistory.create(
+					monitor, previous, MonitorStatus.UNKNOWN, expiredAt, StateChangeReason.OBSERVATION_STALE));
+		}
 	}
 }

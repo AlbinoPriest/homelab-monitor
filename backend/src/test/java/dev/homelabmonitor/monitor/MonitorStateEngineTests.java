@@ -14,7 +14,7 @@ class MonitorStateEngineTests {
 
 		StateTransition online = engine.apply(monitor, ExecutionResult.success(80, MonitorTestFixtures.NOW, 200));
 		assertThat(online.status()).isEqualTo(MonitorStatus.ONLINE);
-		monitor.applyTransition(online, MonitorTestFixtures.NOW);
+		apply(monitor, online);
 
 		StateTransition degraded = engine.apply(monitor, ExecutionResult.success(101, MonitorTestFixtures.NOW, 200));
 		assertThat(degraded.status()).isEqualTo(MonitorStatus.DEGRADED);
@@ -30,12 +30,12 @@ class MonitorStateEngineTests {
 		StateTransition firstFailure = engine.apply(monitor, failure);
 		assertThat(firstFailure.status()).isEqualTo(MonitorStatus.UNKNOWN);
 		assertThat(firstFailure.consecutiveFailures()).isEqualTo(1);
-		monitor.applyTransition(firstFailure, MonitorTestFixtures.NOW);
+		apply(monitor, firstFailure);
 
 		StateTransition success = engine.apply(monitor, ExecutionResult.success(1, MonitorTestFixtures.NOW, null));
 		assertThat(success.status()).isEqualTo(MonitorStatus.ONLINE);
 		assertThat(success.consecutiveFailures()).isZero();
-		monitor.applyTransition(success, MonitorTestFixtures.NOW);
+		apply(monitor, success);
 
 		StateTransition failureAfterReset = engine.apply(monitor, failure);
 		assertThat(failureAfterReset.status()).isEqualTo(MonitorStatus.ONLINE);
@@ -47,12 +47,12 @@ class MonitorStateEngineTests {
 		Monitor monitor = MonitorTestFixtures.monitor(MonitorType.HTTP, "http://localhost", null, 1, 2, 100);
 		StateTransition offline = engine.apply(monitor, ExecutionResult.failure(
 				CheckResultType.TIMEOUT, null, MonitorTestFixtures.NOW, "Timed out.", null));
-		monitor.applyTransition(offline, MonitorTestFixtures.NOW);
+		apply(monitor, offline);
 
 		StateTransition firstRecovery = engine.apply(monitor, ExecutionResult.success(50, MonitorTestFixtures.NOW, 200));
 		assertThat(firstRecovery.status()).isEqualTo(MonitorStatus.OFFLINE);
 		assertThat(firstRecovery.consecutiveSuccesses()).isEqualTo(1);
-		monitor.applyTransition(firstRecovery, MonitorTestFixtures.NOW);
+		apply(monitor, firstRecovery);
 
 		StateTransition recovered = engine.apply(monitor, ExecutionResult.success(150, MonitorTestFixtures.NOW, 200));
 		assertThat(recovered.status()).isEqualTo(MonitorStatus.DEGRADED);
@@ -65,13 +65,16 @@ class MonitorStateEngineTests {
 		Monitor monitor = MonitorTestFixtures.monitor(MonitorType.TCP, "localhost", 80, 1, 2, null);
 		ExecutionResult failure = ExecutionResult.failure(
 				CheckResultType.CONNECTION_REFUSED, 1L, MonitorTestFixtures.NOW, "Connection failed.", null);
-		monitor.applyTransition(engine.apply(monitor, failure), MonitorTestFixtures.NOW);
-		monitor.applyTransition(
-				engine.apply(monitor, ExecutionResult.success(1, MonitorTestFixtures.NOW, null)), MonitorTestFixtures.NOW);
+		apply(monitor, engine.apply(monitor, failure));
+		apply(monitor, engine.apply(monitor, ExecutionResult.success(1, MonitorTestFixtures.NOW, null)));
 
 		StateTransition reset = engine.apply(monitor, failure);
 
 		assertThat(reset.status()).isEqualTo(MonitorStatus.OFFLINE);
 		assertThat(reset.consecutiveSuccesses()).isZero();
+	}
+
+	private void apply(Monitor monitor, StateTransition transition) {
+		monitor.applyTransition(transition, MonitorTestFixtures.NOW, MonitorTestFixtures.NOW.plusSeconds(65));
 	}
 }
