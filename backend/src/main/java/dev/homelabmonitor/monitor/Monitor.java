@@ -69,6 +69,12 @@ class Monitor {
 	@Column(name = "next_check_at")
 	private Instant nextCheckAt;
 
+	@Column(name = "last_checked_at")
+	private Instant lastCheckedAt;
+
+	@Column(name = "observation_valid_until")
+	private Instant observationValidUntil;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -95,12 +101,18 @@ class Monitor {
 
 	void update(MonitorCommand command, Instant now) {
 		boolean wasEnabled = enabled;
+		boolean confirmedOutage = status == MonitorStatus.OFFLINE;
 		boolean executionChanged = executionConfigurationChanged(command);
 		applyConfiguration(command);
 		if (executionChanged) {
-			consecutiveFailures = 0;
 			consecutiveSuccesses = 0;
-			status = command.enabled() ? MonitorStatus.UNKNOWN : MonitorStatus.PAUSED;
+			if (confirmedOutage && command.enabled()) {
+				status = MonitorStatus.OFFLINE;
+				consecutiveFailures = failureThreshold;
+			} else {
+				status = command.enabled() ? MonitorStatus.UNKNOWN : MonitorStatus.PAUSED;
+				consecutiveFailures = 0;
+			}
 			nextCheckAt = command.enabled() ? now : null;
 		}
 		updatedAt = now;
@@ -133,12 +145,29 @@ class Monitor {
 		expectedHttpStatus = command.expectedHttpStatus();
 	}
 
-	void applyTransition(StateTransition transition, Instant checkedAt) {
+	void applyTransition(StateTransition transition, Instant checkedAt, Instant validUntil) {
 		status = transition.status();
 		consecutiveFailures = transition.consecutiveFailures();
 		consecutiveSuccesses = transition.consecutiveSuccesses();
 		nextCheckAt = checkedAt.plusSeconds(intervalSeconds);
+		lastCheckedAt = checkedAt;
+		observationValidUntil = validUntil;
 		updatedAt = checkedAt;
+	}
+
+	void expireEvidence(Instant expiredAt) {
+		if (status == MonitorStatus.ONLINE || status == MonitorStatus.DEGRADED) {
+			status = MonitorStatus.UNKNOWN;
+			consecutiveFailures = 0;
+			consecutiveSuccesses = 0;
+		} else if (status == MonitorStatus.UNKNOWN) {
+			consecutiveFailures = 0;
+			consecutiveSuccesses = 0;
+		} else if (status == MonitorStatus.OFFLINE) {
+			consecutiveSuccesses = 0;
+		}
+		observationValidUntil = null;
+		if (expiredAt.isAfter(updatedAt)) updatedAt = expiredAt;
 	}
 
 	UUID id() { return id; }
@@ -158,6 +187,8 @@ class Monitor {
 	int consecutiveFailures() { return consecutiveFailures; }
 	int consecutiveSuccesses() { return consecutiveSuccesses; }
 	Instant nextCheckAt() { return nextCheckAt; }
+	Instant lastCheckedAt() { return lastCheckedAt; }
+	Instant observationValidUntil() { return observationValidUntil; }
 	Instant createdAt() { return createdAt; }
 	Instant updatedAt() { return updatedAt; }
 	long version() { return version; }

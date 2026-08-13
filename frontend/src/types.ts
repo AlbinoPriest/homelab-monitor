@@ -19,6 +19,7 @@ export type Monitor = {
   consecutiveFailures: number
   consecutiveSuccesses: number
   nextCheckAt: string | null
+  lastCheckedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -30,6 +31,7 @@ export type MonitorInput = Omit<
   | 'consecutiveFailures'
   | 'consecutiveSuccesses'
   | 'nextCheckAt'
+  | 'lastCheckedAt'
   | 'createdAt'
   | 'updatedAt'
 >
@@ -57,6 +59,17 @@ export type StateHistory = {
   toStatus: MonitorStatus
   effectiveAt: string
   reason: string
+}
+
+export type IncidentStatus = 'ACTIVE' | 'RESOLVED'
+export type Incident = {
+  id: string
+  monitorId: string
+  status: IncidentStatus
+  outageReason: Exclude<MonitorCheck['result'], 'SUCCESS'>
+  resolutionReason: 'RECOVERED' | 'MONITORING_PAUSED' | null
+  startedAt: string
+  endedAt: string | null
 }
 
 export type Page<T> = {

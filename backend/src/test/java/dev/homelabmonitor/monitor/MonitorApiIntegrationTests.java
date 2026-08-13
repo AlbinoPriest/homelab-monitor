@@ -43,17 +43,20 @@ class MonitorApiIntegrationTests {
 	private final ObjectMapper objectMapper;
 	private final MonitorRepository monitorRepository;
 	private final MonitorCheckCoordinator coordinator;
+	private final MonitorFreshnessService freshnessService;
 
 	@Autowired
 	MonitorApiIntegrationTests(
 			MockMvc mockMvc,
 			ObjectMapper objectMapper,
 			MonitorRepository monitorRepository,
-			MonitorCheckCoordinator coordinator) {
+			MonitorCheckCoordinator coordinator,
+			MonitorFreshnessService freshnessService) {
 		this.mockMvc = mockMvc;
 		this.objectMapper = objectMapper;
 		this.monitorRepository = monitorRepository;
 		this.coordinator = coordinator;
+		this.freshnessService = freshnessService;
 	}
 
 	@BeforeEach
@@ -76,6 +79,7 @@ class MonitorApiIntegrationTests {
 				.andExpect(status().isUnauthorized());
 		mockMvc.perform(post("/api/v1/monitors/{id}/checks", id).with(csrf()))
 				.andExpect(status().isUnauthorized());
+		mockMvc.perform(get("/api/v1/incidents")).andExpect(status().isUnauthorized());
 	}
 
 	@Test
@@ -239,6 +243,143 @@ class MonitorApiIntegrationTests {
 	}
 
 	@Test
+	void opensOneIncidentAtFailureThresholdAndResolvesAfterRecoveryThreshold() throws Exception {
+		int port;
+		try (ServerSocket reservation = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+			port = reservation.getLocalPort();
+		}
+		UUID id = createMonitor(tcpRequest(port, 2, 2));
+		mockMvc.perform(post("/api/v1/monitors/{id}/checks", id).with(csrf())).andExpect(status().isOk());
+		mockMvc.perform(get("/api/v1/incidents").param("monitorId", id.toString()))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+		mockMvc.perform(post("/api/v1/monitors/{id}/checks", id).with(csrf())).andExpect(status().isOk());
+		mockMvc.perform(post("/api/v1/monitors/{id}/checks", id).with(csrf())).andExpect(status().isOk());
+		mockMvc.perform(get("/api/v1/incidents").param("monitorId", id.toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].status").value("ACTIVE"))
+				.andExpect(jsonPath("$.content[0].outageReason").value("CONNECTION_REFUSED"));
+
+		try (ServerSocket server = new ServerSocket(port, 4, InetAddress.getLoopbackAddress())) {
+			mockMvc.perform(post("/api/v1/monitors/{id}/checks", id).with(csrf())).andExpect(status().isOk());
+			mockMvc.perform(get("/api/v1/incidents").param("status", "ACTIVE"))
+					.andExpect(jsonPath("$.totalElements").value(1));
+			mockMvc.perform(post("/api/v1/monitors/{id}/checks", id).with(csrf())).andExpect(status().isOk());
+		}
+		mockMvc.perform(get("/api/v1/incidents").param("monitorId", id.toString()))
+				.andExpect(jsonPath("$.content[0].status").value("RESOLVED"))
+				.andExpect(jsonPath("$.content[0].resolutionReason").value("RECOVERED"));
+	}
+
+	@Test
+	void pausingOfflineMonitorResolvesIncidentDistinctly() throws Exception {
+		int port;
+		try (ServerSocket reservation = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+			port = reservation.getLocalPort();
+		}
+		String request = tcpRequest(port, 1, 1);
+		UUID id = createMonitor(request);
+		mockMvc.perform(post("/api/v1/monitors/{id}/checks", id).with(csrf())).andExpect(status().isOk());
+		mockMvc.perform(put("/api/v1/monitors/{id}", id).with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request.replace("\"enabled\":true", "\"enabled\":false")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAUSED"));
+		mockMvc.perform(get("/api/v1/incidents").param("monitorId", id.toString()))
+				.andExpect(jsonPath("$.content[0].status").value("RESOLVED"))
+				.andExpect(jsonPath("$.content[0].resolutionReason").value("MONITORING_PAUSED"));
+	}
+
+	@Test
+	void configurationChangePreservesConfirmedOutageAndRecoveryRules() throws Exception {
+		int port;
+		try (ServerSocket reservation = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+			port = reservation.getLocalPort();
+		}
+		String request = tcpRequest(port, 1, 2);
+		UUID id = createMonitor(request);
+		mockMvc.perform(post("/api/v1/monitors/{id}/checks", id).with(csrf()))
+				.andExpect(status().isOk());
+		mockMvc.perform(put("/api/v1/monitors/{id}", id).with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(request.replace("TCP test", "Renamed outage")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("OFFLINE"));
+		try (ServerSocket server = new ServerSocket(port, 4, InetAddress.getLoopbackAddress())) {
+			mockMvc.perform(post("/api/v1/monitors/{id}/checks", id).with(csrf()))
+					.andExpect(status().isOk());
+			mockMvc.perform(get("/api/v1/monitors/{id}", id))
+					.andExpect(jsonPath("$.status").value("OFFLINE"));
+			mockMvc.perform(post("/api/v1/monitors/{id}/checks", id).with(csrf()))
+					.andExpect(status().isOk());
+		}
+		mockMvc.perform(get("/api/v1/incidents").param("monitorId", id.toString()))
+				.andExpect(jsonPath("$.totalElements").value(1))
+				.andExpect(jsonPath("$.content[0].resolutionReason").value("RECOVERED"));
+	}
+
+	@Test
+	void expiresStaleReachableObservationButPreservesConfirmedOfflineState() throws Exception {
+		try (ServerSocket server = new ServerSocket(0, 4, InetAddress.getLoopbackAddress())) {
+			UUID reachableId = createMonitor(tcpRequest(server.getLocalPort(), 1, 1));
+			mockMvc.perform(post("/api/v1/monitors/{id}/checks", reachableId).with(csrf()))
+					.andExpect(jsonPath("$.result").value("SUCCESS"));
+			freshnessService.expireIfStale(reachableId, java.time.Instant.now().plusSeconds(90));
+			mockMvc.perform(get("/api/v1/monitors/{id}", reachableId))
+					.andExpect(jsonPath("$.status").value("UNKNOWN"));
+			mockMvc.perform(get("/api/v1/monitors/{id}/history", reachableId))
+					.andExpect(jsonPath("$.content[0].reason").value("OBSERVATION_STALE"));
+		}
+
+		int closedPort;
+		try (ServerSocket reservation = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+			closedPort = reservation.getLocalPort();
+		}
+		UUID offlineId = createMonitor(tcpRequest(closedPort, 1, 1));
+		mockMvc.perform(post("/api/v1/monitors/{id}/checks", offlineId).with(csrf())).andExpect(status().isOk());
+		freshnessService.expireIfStale(offlineId, java.time.Instant.now().plusSeconds(90));
+		mockMvc.perform(get("/api/v1/monitors/{id}", offlineId))
+				.andExpect(jsonPath("$.status").value("OFFLINE"));
+		mockMvc.perform(get("/api/v1/incidents").param("monitorId", offlineId.toString()))
+				.andExpect(jsonPath("$.content[0].status").value("ACTIVE"));
+	}
+
+	@Test
+	void staleGapResetsIncompleteFailureAndOfflineRecoveryEvidence() throws Exception {
+		int closedPort;
+		try (ServerSocket reservation = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+			closedPort = reservation.getLocalPort();
+		}
+
+		UUID unknownId = createMonitor(tcpRequest(closedPort, 2, 2));
+		mockMvc.perform(post("/api/v1/monitors/{id}/checks", unknownId).with(csrf()))
+				.andExpect(status().isOk());
+		freshnessService.expireIfStale(unknownId, java.time.Instant.now().plusSeconds(90));
+		mockMvc.perform(post("/api/v1/monitors/{id}/checks", unknownId).with(csrf()))
+				.andExpect(status().isOk());
+		mockMvc.perform(get("/api/v1/monitors/{id}", unknownId))
+				.andExpect(jsonPath("$.status").value("UNKNOWN"))
+				.andExpect(jsonPath("$.consecutiveFailures").value(1));
+		mockMvc.perform(get("/api/v1/incidents").param("monitorId", unknownId.toString()))
+				.andExpect(jsonPath("$.totalElements").value(0));
+
+		UUID offlineId = createMonitor(tcpRequest(closedPort, 1, 2));
+		mockMvc.perform(post("/api/v1/monitors/{id}/checks", offlineId).with(csrf()))
+				.andExpect(status().isOk());
+		try (ServerSocket server = new ServerSocket(closedPort, 4, InetAddress.getLoopbackAddress())) {
+			mockMvc.perform(post("/api/v1/monitors/{id}/checks", offlineId).with(csrf()))
+					.andExpect(status().isOk());
+			freshnessService.expireIfStale(offlineId, java.time.Instant.now().plusSeconds(90));
+			mockMvc.perform(post("/api/v1/monitors/{id}/checks", offlineId).with(csrf()))
+					.andExpect(status().isOk());
+		}
+		mockMvc.perform(get("/api/v1/monitors/{id}", offlineId))
+				.andExpect(jsonPath("$.status").value("OFFLINE"))
+				.andExpect(jsonPath("$.consecutiveSuccesses").value(1));
+		mockMvc.perform(get("/api/v1/incidents").param("monitorId", offlineId.toString()))
+				.andExpect(jsonPath("$.content[0].status").value("ACTIVE"));
+	}
+
+	@Test
 	void discardsResultWhenConfigurationChangesDuringActiveCheck() throws Exception {
 		CountDownLatch requestStarted = new CountDownLatch(1);
 		CountDownLatch releaseResponse = new CountDownLatch(1);
@@ -384,6 +525,10 @@ class MonitorApiIntegrationTests {
 	}
 
 	private String tcpRequest(int port, int failureThreshold) {
+		return tcpRequest(port, failureThreshold, 1);
+	}
+
+	private String tcpRequest(int port, int failureThreshold, int recoveryThreshold) {
 		return """
 				{
 				  "name":"TCP test",
@@ -395,10 +540,10 @@ class MonitorApiIntegrationTests {
 				  "intervalSeconds":60,
 				  "timeoutMillis":500,
 				  "failureThreshold":%d,
-				  "recoveryThreshold":1,
+				  "recoveryThreshold":%d,
 				  "latencyWarningMillis":200,
 				  "expectedHttpStatus":null
 				}
-				""".formatted(port, failureThreshold);
+				""".formatted(port, failureThreshold, recoveryThreshold);
 	}
 }

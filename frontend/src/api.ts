@@ -1,4 +1,12 @@
-import type { Monitor, MonitorCheck, MonitorInput, Page, StateHistory } from './types'
+import type {
+  Incident,
+  IncidentStatus,
+  Monitor,
+  MonitorCheck,
+  MonitorInput,
+  Page,
+  StateHistory,
+} from './types'
 
 type CsrfToken = { headerName: string; parameterName: string; token: string }
 export type OwnerSummary = { email: string; displayName: string }
@@ -87,6 +95,20 @@ export const api = {
   getMonitor: (id: string) => request<Monitor>(`/api/v1/monitors/${id}`),
   getChecks: (id: string) => request<Page<MonitorCheck>>(`/api/v1/monitors/${id}/checks?size=20`),
   getHistory: (id: string) => request<Page<StateHistory>>(`/api/v1/monitors/${id}/history?size=20`),
+  getIncidents: (options?: {
+    monitorId?: string
+    status?: IncidentStatus
+    page?: number
+    size?: number
+  }) => {
+    const parameters = new URLSearchParams({
+      page: String(options?.page ?? 0),
+      size: String(options?.size ?? 20),
+    })
+    if (options?.monitorId) parameters.set('monitorId', options.monitorId)
+    if (options?.status) parameters.set('status', options.status)
+    return request<Page<Incident>>(`/api/v1/incidents?${parameters}`)
+  },
   createMonitor: (input: MonitorInput) => mutation<Monitor>('/api/v1/monitors', 'POST', input),
   updateMonitor: (id: string, input: MonitorInput) =>
     mutation<Monitor>(`/api/v1/monitors/${id}`, 'PUT', input),

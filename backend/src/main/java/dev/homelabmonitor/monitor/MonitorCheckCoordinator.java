@@ -2,12 +2,12 @@ package dev.homelabmonitor.monitor;
 
 import java.time.Clock;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.Semaphore;
@@ -26,7 +26,9 @@ class MonitorCheckCoordinator {
 	private final Executor taskExecutor;
 	private final Executor manualTaskExecutor;
 	private final Clock clock;
-	private final Set<UUID> inFlight = ConcurrentHashMap.newKeySet();
+	private final Object stateLock = new Object();
+	private final Set<UUID> queued = new HashSet<>();
+	private final Set<UUID> inFlight = new HashSet<>();
 	private final Semaphore manualSlots = new Semaphore(4);
 
 	MonitorCheckCoordinator(
@@ -47,7 +49,7 @@ class MonitorCheckCoordinator {
 		if (!manualSlots.tryAcquire()) {
 			throw new MonitorBusyException(id);
 		}
-		if (!inFlight.add(id)) {
+		if (!claimManual(id)) {
 			manualSlots.release();
 			throw new MonitorBusyException(id);
 		}
@@ -55,7 +57,7 @@ class MonitorCheckCoordinator {
 		try {
 			snapshot = persistence.manualSnapshot(id);
 		} catch (RuntimeException exception) {
-			inFlight.remove(id);
+			releaseRunning(id);
 			manualSlots.release();
 			throw exception;
 		}
@@ -63,7 +65,7 @@ class MonitorCheckCoordinator {
 			try {
 				return executeAndPersist(snapshot);
 			} finally {
-				inFlight.remove(id);
+				releaseRunning(id);
 				manualSlots.release();
 			}
 		});
@@ -77,32 +79,72 @@ class MonitorCheckCoordinator {
 		} catch (java.util.concurrent.ExecutionException exception) {
 			throw new InvalidMonitorException("Monitor check failed safely.");
 		} catch (TaskRejectedException exception) {
-			inFlight.remove(id);
+			releaseRunning(id);
 			manualSlots.release();
 			throw new MonitorBusyException(id);
 		}
 	}
 
 	boolean schedule(UUID id) {
-		if (!inFlight.add(id)) {
+		if (!enqueue(id)) {
 			return false;
 		}
 		try {
 			taskExecutor.execute(() -> executeScheduled(id));
 			return true;
 		} catch (TaskRejectedException exception) {
-			inFlight.remove(id);
+			removeQueued(id);
 			log.warn("Monitor check queue is full; skipped monitor {}", id);
 			return false;
 		}
 	}
 
+	boolean claimForFreshness(UUID id) {
+		synchronized (stateLock) {
+			return inFlight.add(id);
+		}
+	}
+
+	void releaseFreshnessClaim(UUID id) { releaseRunning(id); }
+
 	private void executeScheduled(UUID id) {
+		if (!startScheduled(id)) return;
 		try {
 			persistence.scheduledSnapshot(id).flatMap(this::executeAndPersist);
 		} catch (RuntimeException exception) {
 			log.error("Scheduled monitor check failed safely for monitor {}", id, exception);
 		} finally {
+			releaseRunning(id);
+		}
+	}
+
+	private boolean claimManual(UUID id) {
+		synchronized (stateLock) {
+			return !queued.contains(id) && inFlight.add(id);
+		}
+	}
+
+	private boolean enqueue(UUID id) {
+		synchronized (stateLock) {
+			return !inFlight.contains(id) && queued.add(id);
+		}
+	}
+
+	private boolean startScheduled(UUID id) {
+		synchronized (stateLock) {
+			queued.remove(id);
+			return inFlight.add(id);
+		}
+	}
+
+	private void removeQueued(UUID id) {
+		synchronized (stateLock) {
+			queued.remove(id);
+		}
+	}
+
+	private void releaseRunning(UUID id) {
+		synchronized (stateLock) {
 			inFlight.remove(id);
 		}
 	}

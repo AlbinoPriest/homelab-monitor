@@ -15,3 +15,4 @@ All notable changes will be documented in this file. The project has not publish
 - Flyway monitoring-core schema with versioned stale-result protection and deterministic restart scheduling.
 - Responsive dark-mode dashboard and service-management interface with adaptive HTTP/TCP forms, search, filtering, sorting, manual checks, and state history.
 - Singleton first-owner setup, BCrypt password storage, server-side session login/logout, CSRF-protected authentication, authenticated monitor APIs, and frontend route gating.
+- Exactly-once outage incidents with recovery/pause resolution, persisted observation-validity windows, deterministic freshness expiry, migration backfill, paginated incident APIs, and responsive incident views.

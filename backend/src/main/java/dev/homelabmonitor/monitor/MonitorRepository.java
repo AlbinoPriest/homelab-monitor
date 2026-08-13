@@ -16,6 +16,9 @@ interface MonitorRepository extends JpaRepository<Monitor, UUID> {
 	List<Monitor> findByEnabledTrueAndNextCheckAtLessThanEqualOrderByNextCheckAtAsc(
 			Instant now, Pageable pageable);
 
+	List<Monitor> findByEnabledTrueAndStatusInAndObservationValidUntilLessThanEqual(
+			List<MonitorStatus> statuses, Instant now);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select monitor from Monitor monitor where monitor.id = :id")
 	Optional<Monitor> findByIdForUpdate(@Param("id") UUID id);

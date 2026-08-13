@@ -73,7 +73,23 @@ class MonitorCheckCoordinatorTests {
 
 		assertThat(coordinator.schedule(id)).isTrue();
 		assertThat(coordinator.schedule(id)).isFalse();
+		assertThatThrownBy(() -> coordinator.executeNow(id)).isInstanceOf(MonitorBusyException.class);
 		executor.runCaptured();
+		assertThat(coordinator.schedule(id)).isTrue();
+	}
+
+	@Test
+	void queuedWorkDoesNotSuppressFreshnessAndDefersWhenScannerOwnsTheRunningGate() {
+		UUID id = UUID.randomUUID();
+		MonitorExecutionPersistence persistence = mock(MonitorExecutionPersistence.class);
+		CapturingExecutor executor = new CapturingExecutor();
+		MonitorCheckCoordinator coordinator = coordinator(persistence, List.of(), executor);
+
+		assertThat(coordinator.schedule(id)).isTrue();
+		assertThat(coordinator.claimForFreshness(id)).isTrue();
+		executor.runCaptured();
+		org.mockito.Mockito.verify(persistence, org.mockito.Mockito.never()).scheduledSnapshot(id);
+		coordinator.releaseFreshnessClaim(id);
 		assertThat(coordinator.schedule(id)).isTrue();
 	}
 

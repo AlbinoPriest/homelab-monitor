@@ -33,6 +33,9 @@ class MonitorCheck {
 	@Column(name = "checked_at", nullable = false)
 	private Instant checkedAt;
 
+	@Column(name = "observation_valid_until", nullable = false)
+	private Instant observationValidUntil;
+
 	@Column(name = "error_message", length = 512)
 	private String errorMessage;
 
@@ -42,13 +45,14 @@ class MonitorCheck {
 	protected MonitorCheck() {
 	}
 
-	static MonitorCheck from(Monitor monitor, ExecutionResult result) {
+	static MonitorCheck from(Monitor monitor, ExecutionResult result, Instant observationValidUntil) {
 		MonitorCheck check = new MonitorCheck();
 		check.id = UUID.randomUUID();
 		check.monitor = monitor;
 		check.result = result.type();
 		check.responseTimeMillis = result.responseTimeMillis();
 		check.checkedAt = result.checkedAt();
+		check.observationValidUntil = observationValidUntil;
 		check.errorMessage = result.safeErrorMessage();
 		check.httpStatus = result.httpStatus();
 		return check;

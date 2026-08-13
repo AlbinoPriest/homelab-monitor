@@ -11,7 +11,7 @@ import {
   StatusBadge,
 } from './components'
 import { Icons } from './icons'
-import type { Monitor, MonitorInput, MonitorStatus } from './types'
+import type { Incident, IncidentStatus, Monitor, MonitorInput, MonitorStatus } from './types'
 
 const monitorKey = ['monitors'] as const
 
@@ -48,10 +48,10 @@ function Layout({
             <Icons.services />
             Services
           </NavLink>
-          <span className="nav-planned" aria-disabled="true" title="Available in Phase 5">
+          <NavLink to="/incidents">
             <Icons.incidents />
-            Incidents<small>Soon</small>
-          </span>
+            Incidents
+          </NavLink>
           <span className="nav-planned" aria-disabled="true" title="Available in Phase 6">
             <Icons.analytics />
             Analytics<small>Soon</small>
@@ -313,6 +313,151 @@ function ServicesPage({ add, edit }: { add: () => void; edit: (monitor: Monitor)
   )
 }
 
+function incidentLabel(value: string) {
+  return value.replaceAll('_', ' ').toLowerCase()
+}
+
+function IncidentRows({ incidents, monitors }: { incidents: Incident[]; monitors: Monitor[] }) {
+  const names = new Map(monitors.map((monitor) => [monitor.id, monitor.name]))
+  return (
+    <div className="incident-list">
+      {incidents.map((incident) => (
+        <article key={incident.id} className="incident-row">
+          <span className={`incident-state incident-${incident.status.toLowerCase()}`}>
+            {incident.status}
+          </span>
+          <div>
+            <strong>{names.get(incident.monitorId) ?? 'Deleted monitor'}</strong>
+            <p>{incidentLabel(incident.outageReason)}</p>
+          </div>
+          <div className="incident-time">
+            <time>{new Date(incident.startedAt).toLocaleString()}</time>
+            <small>
+              {incident.endedAt
+                ? `${incidentLabel(incident.resolutionReason ?? 'resolved')} · ${new Date(incident.endedAt).toLocaleString()}`
+                : 'Ongoing'}
+            </small>
+          </div>
+          {names.has(incident.monitorId) ? (
+            <Link className="button tertiary" to={`/services/${incident.monitorId}`}>
+              View service
+            </Link>
+          ) : null}
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function PageControls({
+  page,
+  totalPages,
+  onChange,
+  label,
+}: {
+  page: number
+  totalPages: number
+  onChange: (page: number) => void
+  label: string
+}) {
+  if (totalPages <= 1 && page === 0) return null
+  return (
+    <nav className="page-controls" aria-label={label}>
+      <button className="button tertiary" disabled={page === 0} onClick={() => onChange(page - 1)}>
+        Previous
+      </button>
+      <span>
+        Page {page + 1} of {totalPages}
+      </span>
+      <button
+        className="button tertiary"
+        disabled={page + 1 >= totalPages}
+        onClick={() => onChange(page + 1)}
+      >
+        Next
+      </button>
+    </nav>
+  )
+}
+
+function IncidentsPage() {
+  const [status, setStatus] = useState<'ALL' | IncidentStatus>('ALL')
+  const [page, setPage] = useState(0)
+  const monitors = useMonitors()
+  const incidents = useQuery({
+    queryKey: ['incidents', status, page],
+    queryFn: () => api.getIncidents({ ...(status === 'ALL' ? {} : { status }), page }),
+    refetchInterval: 15_000,
+  })
+  const activeIncidents = useQuery({
+    queryKey: ['incidents', 'active-count'],
+    queryFn: () => api.getIncidents({ status: 'ACTIVE', size: 1 }),
+    refetchInterval: 15_000,
+  })
+  useEffect(() => {
+    if (!incidents.data || page === 0 || page < incidents.data.totalPages) return
+    const adjustment = window.setTimeout(
+      () => setPage(Math.max(0, incidents.data.totalPages - 1)),
+      0,
+    )
+    return () => window.clearTimeout(adjustment)
+  }, [incidents.data, page])
+  return (
+    <>
+      <PageHeading
+        eyebrow="Reliability"
+        title="Incidents"
+        subtitle="Confirmed outages open at the failure threshold and close only after recovery or a deliberate pause."
+      />
+      <div className="incident-summary">
+        <div>
+          <span>Active incidents</span>
+          <strong>{activeIncidents.data?.totalElements ?? '—'}</strong>
+        </div>
+        <label>
+          <span className="sr-only">Filter incidents</span>
+          <select
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value as 'ALL' | IncidentStatus)
+              setPage(0)
+            }}
+          >
+            <option value="ALL">All incidents</option>
+            <option value="ACTIVE">Active only</option>
+            <option value="RESOLVED">Resolved only</option>
+          </select>
+        </label>
+      </div>
+      {incidents.isPending || monitors.isPending || activeIncidents.isPending ? (
+        <SkeletonRows />
+      ) : incidents.isError || monitors.isError || activeIncidents.isError ? (
+        <ErrorState
+          retry={() =>
+            void Promise.all([incidents.refetch(), monitors.refetch(), activeIncidents.refetch()])
+          }
+        />
+      ) : incidents.data.content.length === 0 && page === 0 ? (
+        <EmptyState title={status === 'ACTIVE' ? 'No active incidents' : 'No incidents recorded'}>
+          {status === 'ACTIVE'
+            ? 'No service is currently in a confirmed outage.'
+            : 'Confirmed outages will appear here after a monitor reaches its failure threshold.'}
+        </EmptyState>
+      ) : (
+        <>
+          <IncidentRows incidents={incidents.data.content} monitors={monitors.data} />
+          <PageControls
+            page={incidents.data.page}
+            totalPages={incidents.data.totalPages}
+            onChange={setPage}
+            label="Incident pages"
+          />
+        </>
+      )}
+    </>
+  )
+}
+
 function ServiceCard({ monitor, edit }: { monitor: Monitor; edit: () => void }) {
   return (
     <article className="service-card">
@@ -354,6 +499,7 @@ function ServiceDetailPage({ edit }: { edit: (monitor: Monitor) => void }) {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const client = useQueryClient()
+  const [incidentPage, setIncidentPage] = useState(0)
   const monitor = useQuery({
     queryKey: ['monitor', id],
     queryFn: () => api.getMonitor(id),
@@ -371,6 +517,20 @@ function ServiceDetailPage({ edit }: { edit: (monitor: Monitor) => void }) {
     enabled: monitor.isSuccess,
     refetchInterval: 15_000,
   })
+  const incidents = useQuery({
+    queryKey: ['incidents', id, incidentPage],
+    queryFn: () => api.getIncidents({ monitorId: id, page: incidentPage, size: 10 }),
+    enabled: monitor.isSuccess,
+    refetchInterval: 15_000,
+  })
+  useEffect(() => {
+    if (!incidents.data || incidentPage === 0 || incidentPage < incidents.data.totalPages) return
+    const adjustment = window.setTimeout(
+      () => setIncidentPage(Math.max(0, incidents.data.totalPages - 1)),
+      0,
+    )
+    return () => window.clearTimeout(adjustment)
+  }, [incidentPage, incidents.data])
   const [confirmDelete, setConfirmDelete] = useState(false)
   const check = useMutation({
     mutationFn: () => api.checkMonitor(id),
@@ -379,6 +539,7 @@ function ServiceDetailPage({ edit }: { edit: (monitor: Monitor) => void }) {
         client.invalidateQueries({ queryKey: ['monitor', id] }),
         client.invalidateQueries({ queryKey: ['checks', id] }),
         client.invalidateQueries({ queryKey: ['history', id] }),
+        client.invalidateQueries({ queryKey: ['incidents'] }),
         client.invalidateQueries({ queryKey: monitorKey }),
       ]),
   })
@@ -388,6 +549,7 @@ function ServiceDetailPage({ edit }: { edit: (monitor: Monitor) => void }) {
       void Promise.all([
         client.invalidateQueries({ queryKey: ['monitor', id] }),
         client.invalidateQueries({ queryKey: ['history', id] }),
+        client.invalidateQueries({ queryKey: ['incidents'] }),
         client.invalidateQueries({ queryKey: monitorKey }),
       ]),
   })
@@ -569,6 +731,32 @@ function ServiceDetailPage({ edit }: { edit: (monitor: Monitor) => void }) {
           <p className="panel-empty">No state transitions recorded.</p>
         )}
       </section>
+      <section className="panel">
+        <div className="panel-heading">
+          <h2>Incidents</h2>
+          <Link to="/incidents">View all incidents</Link>
+        </div>
+        {incidents.isPending ? (
+          <SkeletonRows />
+        ) : incidents.isError ? (
+          <p className="panel-action-error" role="alert">
+            Incidents could not be loaded.{' '}
+            <button onClick={() => void incidents.refetch()}>Try again</button>
+          </p>
+        ) : incidents.data && (incidents.data.content.length > 0 || incidentPage > 0) ? (
+          <>
+            <IncidentRows incidents={incidents.data.content} monitors={[value]} />
+            <PageControls
+              page={incidents.data.page}
+              totalPages={incidents.data.totalPages}
+              onChange={setIncidentPage}
+              label="Service incident pages"
+            />
+          </>
+        ) : (
+          <p className="panel-empty">No confirmed outages recorded.</p>
+        )}
+      </section>
       {confirmDelete ? (
         <ConfirmDialog
           title={`Delete ${value.name}?`}
@@ -578,7 +766,7 @@ function ServiceDetailPage({ edit }: { edit: (monitor: Monitor) => void }) {
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => remove.mutate()}
         >
-          This permanently removes the monitor and its check and state history.
+          This permanently removes the monitor and its check, state, and incident history.
         </ConfirmDialog>
       ) : null}
     </>
@@ -658,6 +846,7 @@ function MonitoringApp({
           path="/services/:id"
           element={<ServiceDetailPage edit={(monitor) => setForm({ open: true, monitor })} />}
         />
+        <Route path="/incidents" element={<IncidentsPage />} />
         <Route
           path="*"
           element={
