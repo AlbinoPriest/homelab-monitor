@@ -75,6 +75,12 @@ Copy `.env.example` to `.env` to override these local defaults. `.env` is ignore
 | `POSTGRES_PORT` | `5432` | Loopback host port for PostgreSQL |
 | `SESSION_TIMEOUT` | `30m` | Inactivity timeout for the owner session |
 | `SESSION_COOKIE_SECURE` | `false` | Set to `true` when the browser origin uses HTTPS |
+| `RAW_CHECK_RETENTION_ENABLED` | `true` | Enables scheduled raw-check cleanup |
+| `RAW_CHECK_RETENTION_DAYS` | `30` | Raw-check history retained for analytics and detail views |
+| `RAW_CHECK_RETENTION_BATCH_SIZE` | `1000` | Maximum rows deleted per cleanup batch |
+| `RAW_CHECK_RETENTION_MAX_BATCHES_PER_RUN` | `10` | Maximum cleanup batches processed in one scheduled run |
+| `RAW_CHECK_RETENTION_INITIAL_DELAY` | `60000` | Startup delay before cleanup, in milliseconds |
+| `RAW_CHECK_RETENTION_CLEANUP_DELAY` | `86400000` | Delay between cleanup runs, in milliseconds |
 The backend development profile imports the repository-root `.env`, so the same `POSTGRES_*` values configure Compose and the locally launched application. Environment variables still take precedence over file values. Phase 8 will document every production variable and secret lifecycle.
 
 ## PostgreSQL backup — planned for Phase 8

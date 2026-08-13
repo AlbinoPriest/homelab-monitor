@@ -5,7 +5,11 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resetCsrfForTests } from './api'
 import { App } from './App'
-import type { Incident, Monitor } from './types'
+import type { Analytics, Incident, MetricWindow, Monitor, MonitorMetrics } from './types'
+
+vi.mock('./ReliabilityChart', () => ({
+  default: () => <div role="img" aria-label="Availability over time" />,
+}))
 
 const monitor: Monitor = {
   id: '9d8d235c-949c-4a78-882e-7783cf45845b',
@@ -45,6 +49,73 @@ const authenticated = {
   owner: { email: 'owner@example.com', displayName: 'Lab Owner' },
 }
 
+function metricsFixture(window: MetricWindow = '24h'): MonitorMetrics {
+  return {
+    monitorId: monitor.id,
+    monitorName: monitor.name,
+    window,
+    windowStart: '2029-12-31T00:00:00Z',
+    windowEnd: '2030-01-01T00:00:00Z',
+    dataAvailableFrom: '2029-12-31T00:00:00Z',
+    partial: false,
+    availableMillis: 80_000,
+    unavailableMillis: 20_000,
+    excludedMillis: 10_000,
+    uptimePercent: 80,
+    incidentCount: 1,
+    latency: {
+      sampleCount: 3,
+      averageMillis: 20,
+      minMillis: 10,
+      maxMillis: 30,
+      medianMillis: 20,
+      p95Millis: 30,
+    },
+    buckets: Array.from({ length: 24 }, (_, index) => {
+      const start = new Date(Date.UTC(2029, 11, 31, index))
+      const end = new Date(start.getTime() + 60 * 60 * 1000)
+      return {
+        start: start.toISOString(),
+        end: end.toISOString(),
+        availableMillis: 80,
+        unavailableMillis: 20,
+        excludedMillis: 0,
+        uptimePercent: 80,
+      }
+    }),
+  }
+}
+
+const analyticsFixture: Analytics = {
+  window: '24h',
+  windowStart: '2029-12-31T00:00:00Z',
+  windowEnd: '2030-01-01T00:00:00Z',
+  overallUptimePercent: 80,
+  averageMonitorUptimePercent: 80,
+  averageLatencyMillis: 20,
+  incidentCount: 1,
+  availableMillis: 80_000,
+  downtimeMillis: 20_000,
+  excludedMillis: 10_000,
+  partial: false,
+  monitors: [
+    {
+      monitorId: monitor.id,
+      monitorName: monitor.name,
+      uptimePercent: 80,
+      availableMillis: 80_000,
+      downtimeMillis: 20_000,
+      excludedMillis: 10_000,
+      incidentCount: 1,
+      averageLatencyMillis: 20,
+      partial: false,
+    },
+  ],
+  slowestMonitors: [],
+  leastReliableMonitors: [],
+  mostDowntimeMonitors: [],
+}
+
 function isAuthStatus(input: RequestInfo | URL) {
   return String(input).endsWith('/api/v1/auth/status')
 }
@@ -70,14 +141,29 @@ describe('monitoring dashboard', () => {
   })
 
   it('summarizes status and links to monitored services', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
-      isAuthStatus(input) ? response(authenticated) : response([monitor]),
-    )
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (isAuthStatus(input)) return response(authenticated)
+      if (String(input).includes('/analytics')) return response(analyticsFixture)
+      return response([monitor])
+    })
     renderApp()
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
     expect((await screen.findAllByText('NAS dashboard')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('ONLINE').length).toBeGreaterThan(0)
     expect(screen.getByText('Everything looks steady')).toBeInTheDocument()
+  })
+
+  it('keeps live monitor state visible when the analytics summary fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (isAuthStatus(input)) return response(authenticated)
+      if (String(input).includes('/analytics')) return response({ detail: 'Unavailable' }, 503)
+      return response([monitor])
+    })
+
+    renderApp()
+    expect(await screen.findByText('Everything looks steady')).toBeInTheDocument()
+    expect(screen.getAllByText('Unavailable')).toHaveLength(2)
+    expect(screen.getByRole('alert')).toHaveTextContent('Reliability summary could not be loaded')
   })
 
   it('searches and filters the service inventory', async () => {
@@ -108,6 +194,7 @@ describe('monitoring dashboard', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input)
       if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/metrics')) return response(metricsFixture())
       if (url.endsWith('/csrf')) {
         return response({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'test-token' })
       }
@@ -142,6 +229,7 @@ describe('monitoring dashboard', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input)
       if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/metrics')) return response(metricsFixture())
       if (url.endsWith('/csrf')) {
         return response({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' })
       }
@@ -190,10 +278,67 @@ describe('monitoring dashboard', () => {
     )
   })
 
+  it('shows duration-based reliability and switches the selected metrics window', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input)
+      if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/metrics')) {
+        const window: MetricWindow = url.includes('window=7d')
+          ? '7d'
+          : url.includes('window=30d')
+            ? '30d'
+            : '24h'
+        return response(metricsFixture(window))
+      }
+      if (url.includes('/checks') || url.includes('/history')) {
+        return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+      }
+      if (url.includes('/incidents')) {
+        return response({ content: [], page: 0, size: 10, totalElements: 0, totalPages: 0 })
+      }
+      return response(monitor)
+    })
+
+    renderApp(`/services/${monitor.id}`)
+    expect(await screen.findByRole('heading', { name: 'Reliability' })).toBeInTheDocument()
+    expect(screen.getAllByText('80.00%')).toHaveLength(3)
+    expect(screen.getAllByText('30.0 ms')).toHaveLength(2)
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Time range' }), '7d')
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('window=7d'),
+        expect.anything(),
+      ),
+    )
+  })
+
+  it('labels each retention-limited uptime range', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = String(input)
+      if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/metrics')) {
+        const metrics = metricsFixture(url.includes('window=30d') ? '30d' : '24h')
+        return response(url.includes('window=30d') ? { ...metrics, partial: true } : metrics)
+      }
+      if (url.includes('/checks') || url.includes('/history')) {
+        return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+      }
+      if (url.includes('/incidents')) {
+        return response({ content: [], page: 0, size: 10, totalElements: 0, totalPages: 0 })
+      }
+      return response(monitor)
+    })
+
+    renderApp(`/services/${monitor.id}`)
+    expect(await screen.findByText('Retention-limited')).toBeInTheDocument()
+    expect(screen.getByText(/Retention limits this range/)).toBeInTheDocument()
+  })
+
   it('distinguishes failed detail requests from empty history', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = String(input)
       if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/metrics')) return response(metricsFixture())
       if (url.includes('/checks') || url.includes('/history')) {
         return response({ detail: 'Unavailable' }, 503)
       }
@@ -211,6 +356,7 @@ describe('monitoring dashboard', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = String(input)
       if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/metrics')) return response(metricsFixture())
       if (url.includes('/history')) return new Promise<Response>(() => undefined)
       if (url.includes('/checks')) {
         return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
@@ -229,6 +375,7 @@ describe('monitoring dashboard', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input)
       if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/metrics')) return response(metricsFixture())
       if (url.endsWith('/csrf')) {
         return response({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' })
       }
@@ -264,6 +411,7 @@ describe('monitoring dashboard', () => {
       }
       if (url.endsWith('/auth/setup') && init?.method === 'POST')
         return response(authenticated, 201)
+      if (url.includes('/analytics')) return response(analyticsFixture)
       return response([])
     })
     renderApp()
@@ -296,6 +444,7 @@ describe('monitoring dashboard', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = String(input)
       if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/metrics')) return response(metricsFixture())
       if (url.includes('/incidents')) {
         if (url.includes('status=ACTIVE')) {
           return response({
@@ -352,6 +501,7 @@ describe('monitoring dashboard', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = String(input)
       if (isAuthStatus(input)) return response(authenticated)
+      if (url.includes('/metrics')) return response(metricsFixture())
       if (url.includes('/incidents')) {
         const page = url.includes('page=1') ? 1 : 0
         return response({ content: [incident], page, size: 10, totalElements: 11, totalPages: 2 })
@@ -409,6 +559,46 @@ describe('monitoring dashboard', () => {
     )
     expect(await screen.findByText('Page 1 of 2')).toBeInTheDocument()
     expect(screen.queryByText('Page 2 of 1')).not.toBeInTheDocument()
+  })
+
+  it('renders analytics rankings and reloads them for a new time range', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (isAuthStatus(input)) return response(authenticated)
+      if (String(input).includes('/analytics')) return response(analyticsFixture)
+      return response([])
+    })
+
+    renderApp('/analytics')
+    expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
+    expect(await screen.findByText('Overall uptime')).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: 'All monitor analytics' })).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Time range' }), '30d')
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('window=30d'),
+        expect.anything(),
+      ),
+    )
+  })
+
+  it('guides a new owner from empty analytics to service setup', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (isAuthStatus(input)) return response(authenticated)
+      if (String(input).includes('/analytics')) {
+        return response({
+          ...analyticsFixture,
+          overallUptimePercent: null,
+          averageMonitorUptimePercent: null,
+          averageLatencyMillis: null,
+          monitors: [],
+        })
+      }
+      return response([])
+    })
+
+    renderApp('/analytics')
+    expect(await screen.findByRole('heading', { name: 'No analytics yet' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Add a monitor' })).toHaveAttribute('href', '/services')
   })
 
   it('shows a generic login error without entering the application', async () => {

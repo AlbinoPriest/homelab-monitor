@@ -1,5 +1,6 @@
 package dev.homelabmonitor.common.web;
 
+import dev.homelabmonitor.analytics.InvalidAnalyticsRequestException;
 import dev.homelabmonitor.monitor.InvalidMonitorException;
 import dev.homelabmonitor.auth.InvalidAuthRequestException;
 import dev.homelabmonitor.auth.InvalidCredentialsException;
@@ -56,6 +57,11 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(InvalidMonitorException.class)
 	ProblemDetail invalidMonitor(InvalidMonitorException exception) {
 		return problem(HttpStatus.BAD_REQUEST, "Invalid monitor", exception.getMessage());
+	}
+
+	@ExceptionHandler(InvalidAnalyticsRequestException.class)
+	ProblemDetail invalidAnalyticsRequest(InvalidAnalyticsRequestException exception) {
+		return problem(HttpStatus.BAD_REQUEST, "Invalid analytics request", exception.getMessage());
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
