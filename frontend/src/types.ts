@@ -79,3 +79,65 @@ export type Page<T> = {
   totalElements: number
   totalPages: number
 }
+
+export type MetricWindow = '1h' | '24h' | '7d' | '30d'
+export type LatencyStatistics = {
+  sampleCount: number
+  averageMillis: number | null
+  minMillis: number | null
+  maxMillis: number | null
+  medianMillis: number | null
+  p95Millis: number | null
+}
+export type MetricBucket = {
+  start: string
+  end: string
+  availableMillis: number
+  unavailableMillis: number
+  excludedMillis: number
+  uptimePercent: number | null
+}
+export type MonitorMetrics = {
+  monitorId: string
+  monitorName: string
+  window: MetricWindow
+  windowStart: string
+  windowEnd: string
+  dataAvailableFrom: string
+  partial: boolean
+  availableMillis: number
+  unavailableMillis: number
+  excludedMillis: number
+  uptimePercent: number | null
+  incidentCount: number
+  latency: LatencyStatistics
+  buckets: MetricBucket[]
+}
+export type MonitorAnalyticsSummary = {
+  monitorId: string
+  monitorName: string
+  uptimePercent: number | null
+  availableMillis: number
+  downtimeMillis: number
+  excludedMillis: number
+  incidentCount: number
+  averageLatencyMillis: number | null
+  partial: boolean
+}
+export type Analytics = {
+  window: MetricWindow
+  windowStart: string
+  windowEnd: string
+  overallUptimePercent: number | null
+  averageMonitorUptimePercent: number | null
+  averageLatencyMillis: number | null
+  incidentCount: number
+  availableMillis: number
+  downtimeMillis: number
+  excludedMillis: number
+  partial: boolean
+  monitors: MonitorAnalyticsSummary[]
+  slowestMonitors: MonitorAnalyticsSummary[]
+  leastReliableMonitors: MonitorAnalyticsSummary[]
+  mostDowntimeMonitors: MonitorAnalyticsSummary[]
+}

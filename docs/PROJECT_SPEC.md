@@ -12,7 +12,7 @@ This document is the durable source of product requirements and delivery status.
 | 3 | Dashboard and monitor-management UI/API | Complete (`ed43be6`; verification, responsive browser smoke test, and review gates passed) |
 | 4 | First-owner setup and session authentication | Complete (`c88579f`; verification, browser smoke test, and review gates passed) |
 | 5 | Thresholds, incidents, degraded state, pause/freshness reliability | Complete (`a0b814d`; verification, responsive browser smoke test, and review gates passed) |
-| 6 | Duration-based metrics, latency analytics, retention | Not started |
+| 6 | Duration-based metrics, latency analytics, retention | Complete (verification and backend/QA/frontend review gates passed) |
 | 7 | Authenticated Server-Sent Events | Not started |
 | 8 | Production Docker and security/deployment hardening | Not started |
 | 9 | UI, accessibility, README, ADR, changelog, and screenshot polish | Not started |
@@ -199,4 +199,4 @@ Multi-user/RBAC, ICMP, SNMP, Proxmox, Home Assistant, Docker Engine, Tailscale, 
 
 ## Next checkpoint
 
-Begin Phase 5 from the verified Phase 4 authentication checkpoint. Implement incident lifecycle and reliability semantics through backend, architecture, and adversarial QA review without pulling analytics or realtime delivery forward.
+Begin Phase 7 from the verified Phase 6 metrics/analytics checkpoint. Implement authenticated Server-Sent Events with bounded lifecycle management and backend/frontend/QA review; do not pull production topology or notification delivery forward.

@@ -1,6 +1,6 @@
 # Architecture
 
-This document records durable constraints and the current design. The monitoring core, management interface, owner authentication, and Phase 5 incident/reliability behavior are implemented; sections marked **Planned** describe later phases.
+This document records durable constraints and the current design. The monitoring core, management interface, owner authentication, incident/reliability behavior, and Phase 6 analytics are implemented; sections marked **Planned** describe later phases.
 
 ## Implemented foundation
 
@@ -21,8 +21,9 @@ performs local search, status filtering, and sorting because the version 1 desig
 Forms adapt between HTTP and TCP fields and share the backend's documented bounds. Deliberate mutations
 show inline success or safe error feedback, destructive deletion requires confirmation, dialogs restore
 focus and close with Escape, and all status presentations retain a text label at every breakpoint.
-Incident history is rendered from the authoritative incident API. Uptime and latency analytics are
-intentionally not fabricated from raw check counts and remain deferred until the Phase 6 APIs exist.
+Incident history is rendered from the authoritative incident API. The service detail and analytics routes
+consume duration-based uptime and reachable-check latency APIs. The reliability chart uses 24 bounded buckets,
+and the UI labels retention-limited ranges rather than presenting missing coverage as uptime or downtime.
 
 Before rendering application routes, the frontend resolves authentication status and presents either the
 one-time owner setup or login form. A successful setup signs the owner in. A protected API `401` refreshes
@@ -45,7 +46,7 @@ Docker Compose will run the proxy/frontend, backend, and database. Only the prox
 
 ## Backend module direction
 
-The implemented `monitor` feature owns monitor configuration, execution, scheduling, checks, state history, and freshness. `auth` owns the singleton owner/session boundary, while `incident` owns outage lifecycle and queries. Later phases add `analytics` and `realtime`; `common` remains small. Modules expose narrow application-facing services and avoid a mechanical enterprise layering scheme. A notification module must not exist until notifications are implemented.
+The implemented `monitor` feature owns monitor configuration, execution, scheduling, checks, state history, freshness, and raw-check cleanup. `auth` owns the singleton owner/session boundary, `incident` owns outage lifecycle and queries, and `analytics` owns read-only duration/latency aggregation. A later phase adds `realtime`; `common` remains small. Modules expose narrow application-facing services and avoid a mechanical enterprise layering scheme. A notification module must not exist until notifications are implemented.
 
 Controllers exchange DTOs, application services own use-case/transaction boundaries, and persistence entities remain internal. The backend owns all status and incident decisions.
 
@@ -85,7 +86,7 @@ transitions the monitor to offline. Repeated failures do not duplicate it. Enabl
 preserve a confirmed offline state and reset recovery progress, so they cannot orphan the incident or
 bypass its recovery threshold. Deleting a monitor cascades its incident history.
 
-Uptime is derived from state durations, never check counts. Online/degraded durations are available, offline durations unavailable, and paused/unknown durations excluded.
+Uptime is derived from state durations, never check counts. Online/degraded durations are available, offline durations unavailable, and paused/unknown durations excluded. State intervals are intersected with merged persisted observation-validity coverage, so time without fresh evidence remains excluded even if the operational status or active incident is still offline.
 
 ## Observation freshness
 
@@ -115,8 +116,8 @@ from a monitor's current configuration or today's scheduler tolerance.
 
 A confirmed `OFFLINE` state does not expire automatically: doing so would hide a known unresolved outage
 and could bypass its recovery threshold. Its incident remains active until threshold recovery or pause.
-Phase 6 duration metrics must nevertheless cap observed outage contribution at the freshness boundary and
-report the later unobserved interval as unknown rather than fabricating downtime. This separates the
+Duration metrics nevertheless cap observed outage contribution at persisted freshness boundaries and
+report later unobserved intervals as excluded rather than fabricating downtime. This separates the
 operational fact “recovery has not been observed” from claims about availability while the monitor was not
 running.
 
@@ -143,7 +144,7 @@ lockout. Phase 8 must explicitly define trusted reverse-proxy source-address han
 
 ## Data and migrations
 
-PostgreSQL is authoritative. Flyway is active from Phase 1 and performs incremental migrations; Hibernate validates rather than creates schema. State history provides authoritative transition intervals, checks provide observation and latency detail, and incidents preserve confirmed outage lifecycles. The Phase 5 migration backfills last-check timestamps and active incidents for existing offline monitors. Time-window queries are indexed and bounded. Raw-check retention remains Phase 6 work.
+PostgreSQL is authoritative. Flyway is active from Phase 1 and performs incremental migrations; Hibernate validates rather than creates schema. State history provides authoritative transition intervals, checks provide observation and latency detail, and incidents preserve confirmed outage lifecycles. The Phase 5 migration backfills last-check timestamps and active incidents for existing offline monitors. Phase 6 analytics has PostgreSQL merge overlapping observation coverage and aggregate duration and latency percentiles for the requested 1h, 24h, 7d, or 30d window; raw check rows are never materialized in the application, and each service response exposes exactly 24 chart buckets. A scheduled cleanup removes a configured maximum number of bounded raw-check batches per run after their observation coverage ends (30 days by default); metrics mark a requested range partial and count the unavailable prefix as excluded when retention truncates it. Disabling cleanup also disables the analytics retention boundary. State and incident histories are retained because they remain authoritative domain records.
 
 ## Real-time delivery — planned
 

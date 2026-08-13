@@ -16,3 +16,5 @@ All notable changes will be documented in this file. The project has not publish
 - Responsive dark-mode dashboard and service-management interface with adaptive HTTP/TCP forms, search, filtering, sorting, manual checks, and state history.
 - Singleton first-owner setup, BCrypt password storage, server-side session login/logout, CSRF-protected authentication, authenticated monitor APIs, and frontend route gating.
 - Exactly-once outage incidents with recovery/pause resolution, persisted observation-validity windows, deterministic freshness expiry, migration backfill, paginated incident APIs, and responsive incident views.
+- Duration-based uptime with explicit excluded time, reachable-check latency statistics, 24-bucket reliability charts, aggregate analytics and rankings across 1h/24h/7d/30d windows, and honest retention-limited responses.
+- Configurable bounded-batch raw-check retention with a supporting time index and responsive service/dashboard analytics views.

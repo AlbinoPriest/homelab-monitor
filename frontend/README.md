@@ -15,7 +15,8 @@ Vite proxies `/api` and `/actuator` to the loopback-only backend at `http://127.
 
 The interface provides a responsive dashboard, searchable and sortable service inventory, adaptive
 HTTP/TCP forms, pause/resume and manual-check actions, service details with recent checks and state
-history, and authoritative active/resolved incident views.
+history, authoritative active/resolved incident views, duration-based reliability charts, and retention-aware
+analytics rankings for the supported 1h, 24h, 7d, and 30d windows.
 
 ## Verify
 

@@ -11,7 +11,16 @@ import {
   StatusBadge,
 } from './components'
 import { Icons } from './icons'
-import type { Incident, IncidentStatus, Monitor, MonitorInput, MonitorStatus } from './types'
+import ReliabilityChart from './ReliabilityChart'
+import type {
+  Incident,
+  IncidentStatus,
+  MetricWindow,
+  Monitor,
+  MonitorAnalyticsSummary,
+  MonitorInput,
+  MonitorStatus,
+} from './types'
 
 const monitorKey = ['monitors'] as const
 
@@ -52,10 +61,10 @@ function Layout({
             <Icons.incidents />
             Incidents
           </NavLink>
-          <span className="nav-planned" aria-disabled="true" title="Available in Phase 6">
+          <NavLink to="/analytics">
             <Icons.analytics />
-            Analytics<small>Soon</small>
-          </span>
+            Analytics
+          </NavLink>
         </nav>
       </aside>
       <div className="main-column">
@@ -101,6 +110,11 @@ function targetLabel(monitor: Monitor) {
 
 function DashboardPage({ add }: { add: () => void }) {
   const monitors = useMonitors()
+  const analytics = useQuery({
+    queryKey: ['analytics', '24h'],
+    queryFn: () => api.getAnalytics('24h'),
+    refetchInterval: 60_000,
+  })
   if (monitors.isPending)
     return (
       <>
@@ -154,7 +168,37 @@ function DashboardPage({ add }: { add: () => void }) {
               value={counts.PAUSED + counts.UNKNOWN}
               accent="muted"
             />
+            <Metric
+              label="Average uptime"
+              value={
+                analytics.isPending
+                  ? 'Loading…'
+                  : analytics.isError
+                    ? 'Unavailable'
+                    : percent(analytics.data.averageMonitorUptimePercent)
+              }
+              accent="online"
+              unit="last 24 hours"
+            />
+            <Metric
+              label="Average latency"
+              value={
+                analytics.isPending
+                  ? 'Loading…'
+                  : analytics.isError
+                    ? 'Unavailable'
+                    : milliseconds(analytics.data.averageLatencyMillis)
+              }
+              accent="neutral"
+              unit="reachable checks"
+            />
           </section>
+          {analytics.isError ? (
+            <p className="panel-action-error" role="alert">
+              Reliability summary could not be loaded.{' '}
+              <button onClick={() => void analytics.refetch()}>Try again</button>
+            </p>
+          ) : null}
           <section className="panel">
             <div className="panel-heading">
               <div>
@@ -193,12 +237,22 @@ function DashboardPage({ add }: { add: () => void }) {
   )
 }
 
-function Metric({ label, value, accent }: { label: string; value: number; accent: string }) {
+function Metric({
+  label,
+  value,
+  accent,
+  unit = 'services',
+}: {
+  label: string
+  value: number | string
+  accent: string
+  unit?: string
+}) {
   return (
     <article className={`metric metric-${accent}`}>
       <span>{label}</span>
       <strong>{value}</strong>
-      <small>services</small>
+      <small>{unit}</small>
     </article>
   )
 }
@@ -315,6 +369,181 @@ function ServicesPage({ add, edit }: { add: () => void; edit: (monitor: Monitor)
 
 function incidentLabel(value: string) {
   return value.replaceAll('_', ' ').toLowerCase()
+}
+
+function percent(value: number | null) {
+  return value === null ? 'Insufficient data' : `${value.toFixed(2)}%`
+}
+
+function milliseconds(value: number | null) {
+  return value === null ? 'Insufficient data' : `${value.toFixed(1)} ms`
+}
+
+function duration(value: number) {
+  const minutes = Math.round(value / 60_000)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.round((minutes / 60) * 10) / 10
+  return hours < 48 ? `${hours}h` : `${Math.round((hours / 24) * 10) / 10}d`
+}
+
+function WindowPicker({
+  value,
+  onChange,
+}: {
+  value: MetricWindow
+  onChange: (value: MetricWindow) => void
+}) {
+  return (
+    <label className="window-picker">
+      <span>Time range</span>
+      <select value={value} onChange={(event) => onChange(event.target.value as MetricWindow)}>
+        <option value="1h">Last hour</option>
+        <option value="24h">Last 24 hours</option>
+        <option value="7d">Last 7 days</option>
+        <option value="30d">Last 30 days</option>
+      </select>
+    </label>
+  )
+}
+
+function AnalyticsTable({
+  title,
+  monitors,
+  value,
+}: {
+  title: string
+  monitors: MonitorAnalyticsSummary[]
+  value: (monitor: MonitorAnalyticsSummary) => string
+}) {
+  return (
+    <section className="panel analytics-ranking">
+      <div className="panel-heading">
+        <h2>{title}</h2>
+      </div>
+      {monitors.length ? (
+        <ol>
+          {monitors.map((monitor) => (
+            <li key={monitor.monitorId}>
+              <Link to={`/services/${monitor.monitorId}`}>{monitor.monitorName}</Link>
+              <strong>{value(monitor)}</strong>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="panel-empty">No measured data in this range.</p>
+      )}
+    </section>
+  )
+}
+
+function AnalyticsPage() {
+  const [window, setWindow] = useState<MetricWindow>('24h')
+  const analytics = useQuery({
+    queryKey: ['analytics', window],
+    queryFn: () => api.getAnalytics(window),
+    refetchInterval: 60_000,
+  })
+  return (
+    <>
+      <PageHeading
+        eyebrow="Measured reliability"
+        title="Analytics"
+        subtitle="Duration-based availability and reachable-check latency, with unobserved time excluded."
+        action={<WindowPicker value={window} onChange={setWindow} />}
+      />
+      {analytics.isPending ? (
+        <SkeletonRows />
+      ) : analytics.isError ? (
+        <ErrorState retry={() => void analytics.refetch()} />
+      ) : analytics.data.monitors.length === 0 ? (
+        <EmptyState
+          title="No analytics yet"
+          action={
+            <Link className="button primary" to="/services">
+              Add a monitor
+            </Link>
+          }
+        >
+          Add a service and complete a check to begin measuring reliability and latency.
+        </EmptyState>
+      ) : (
+        <>
+          {analytics.data.partial ? (
+            <p className="data-notice" role="status">
+              This range is partially limited by raw-check retention; unobserved time is excluded.
+            </p>
+          ) : null}
+          <section className="metric-grid analytics-metrics" aria-label="Analytics summary">
+            <Metric
+              label="Overall uptime"
+              value={percent(analytics.data.overallUptimePercent)}
+              accent="online"
+              unit={window}
+            />
+            <Metric
+              label="Average monitor"
+              value={percent(analytics.data.averageMonitorUptimePercent)}
+              accent="neutral"
+              unit="equal monitor weight"
+            />
+            <Metric
+              label="Average latency"
+              value={milliseconds(analytics.data.averageLatencyMillis)}
+              accent="neutral"
+              unit="reachable checks"
+            />
+            <Metric
+              label="Incidents"
+              value={analytics.data.incidentCount}
+              accent="attention"
+              unit={window}
+            />
+          </section>
+          <div className="analytics-grid">
+            <AnalyticsTable
+              title="Least reliable"
+              monitors={analytics.data.leastReliableMonitors}
+              value={(monitor) => percent(monitor.uptimePercent)}
+            />
+            <AnalyticsTable
+              title="Slowest services"
+              monitors={analytics.data.slowestMonitors}
+              value={(monitor) => milliseconds(monitor.averageLatencyMillis)}
+            />
+            <AnalyticsTable
+              title="Most downtime"
+              monitors={analytics.data.mostDowntimeMonitors}
+              value={(monitor) => duration(monitor.downtimeMillis)}
+            />
+          </div>
+          <section className="panel analytics-all">
+            <div className="panel-heading">
+              <h2>All measured services</h2>
+              <span className="muted-copy">Excluded time is never counted as up or down</span>
+            </div>
+            <div className="analytics-table" role="table" aria-label="All monitor analytics">
+              <div role="row" className="analytics-table-head">
+                <span role="columnheader">Service</span>
+                <span role="columnheader">Uptime</span>
+                <span role="columnheader">Latency</span>
+                <span role="columnheader">Downtime</span>
+              </div>
+              {analytics.data.monitors.map((monitor) => (
+                <div role="row" key={monitor.monitorId}>
+                  <Link role="cell" to={`/services/${monitor.monitorId}`}>
+                    {monitor.monitorName}
+                  </Link>
+                  <span role="cell">{percent(monitor.uptimePercent)}</span>
+                  <span role="cell">{milliseconds(monitor.averageLatencyMillis)}</span>
+                  <span role="cell">{duration(monitor.downtimeMillis)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+    </>
+  )
 }
 
 function IncidentRows({ incidents, monitors }: { incidents: Incident[]; monitors: Monitor[] }) {
@@ -500,6 +729,7 @@ function ServiceDetailPage({ edit }: { edit: (monitor: Monitor) => void }) {
   const navigate = useNavigate()
   const client = useQueryClient()
   const [incidentPage, setIncidentPage] = useState(0)
+  const [metricWindow, setMetricWindow] = useState<MetricWindow>('24h')
   const monitor = useQuery({
     queryKey: ['monitor', id],
     queryFn: () => api.getMonitor(id),
@@ -523,6 +753,30 @@ function ServiceDetailPage({ edit }: { edit: (monitor: Monitor) => void }) {
     enabled: monitor.isSuccess,
     refetchInterval: 15_000,
   })
+  const selectedMetrics = useQuery({
+    queryKey: ['metrics', id, metricWindow],
+    queryFn: () => api.getMonitorMetrics(id, metricWindow),
+    enabled: monitor.isSuccess,
+    refetchInterval: 60_000,
+  })
+  const metrics24h = useQuery({
+    queryKey: ['metrics', id, '24h'],
+    queryFn: () => api.getMonitorMetrics(id, '24h'),
+    enabled: monitor.isSuccess,
+    refetchInterval: 60_000,
+  })
+  const metrics7d = useQuery({
+    queryKey: ['metrics', id, '7d'],
+    queryFn: () => api.getMonitorMetrics(id, '7d'),
+    enabled: monitor.isSuccess,
+    refetchInterval: 60_000,
+  })
+  const metrics30d = useQuery({
+    queryKey: ['metrics', id, '30d'],
+    queryFn: () => api.getMonitorMetrics(id, '30d'),
+    enabled: monitor.isSuccess,
+    refetchInterval: 60_000,
+  })
   useEffect(() => {
     if (!incidents.data || incidentPage === 0 || incidentPage < incidents.data.totalPages) return
     const adjustment = window.setTimeout(
@@ -540,6 +794,8 @@ function ServiceDetailPage({ edit }: { edit: (monitor: Monitor) => void }) {
         client.invalidateQueries({ queryKey: ['checks', id] }),
         client.invalidateQueries({ queryKey: ['history', id] }),
         client.invalidateQueries({ queryKey: ['incidents'] }),
+        client.invalidateQueries({ queryKey: ['metrics', id] }),
+        client.invalidateQueries({ queryKey: ['analytics'] }),
         client.invalidateQueries({ queryKey: monitorKey }),
       ]),
   })
@@ -550,13 +806,18 @@ function ServiceDetailPage({ edit }: { edit: (monitor: Monitor) => void }) {
         client.invalidateQueries({ queryKey: ['monitor', id] }),
         client.invalidateQueries({ queryKey: ['history', id] }),
         client.invalidateQueries({ queryKey: ['incidents'] }),
+        client.invalidateQueries({ queryKey: ['metrics', id] }),
+        client.invalidateQueries({ queryKey: ['analytics'] }),
         client.invalidateQueries({ queryKey: monitorKey }),
       ]),
   })
   const remove = useMutation({
     mutationFn: () => api.deleteMonitor(id),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: monitorKey })
+      void Promise.all([
+        client.invalidateQueries({ queryKey: monitorKey }),
+        client.invalidateQueries({ queryKey: ['analytics'] }),
+      ])
       navigate('/services')
     },
   })
@@ -615,6 +876,99 @@ function ServiceDetailPage({ edit }: { edit: (monitor: Monitor) => void }) {
           Check completed: {check.data.result.replaceAll('_', ' ').toLowerCase()}.
         </p>
       ) : null}
+      <section className="panel reliability-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Measured availability</p>
+            <h2>Reliability</h2>
+          </div>
+          <WindowPicker value={metricWindow} onChange={setMetricWindow} />
+        </div>
+        {selectedMetrics.isPending ||
+        metrics24h.isPending ||
+        metrics7d.isPending ||
+        metrics30d.isPending ? (
+          <SkeletonRows />
+        ) : selectedMetrics.isError ||
+          metrics24h.isError ||
+          metrics7d.isError ||
+          metrics30d.isError ? (
+          <p className="panel-action-error" role="alert">
+            Reliability metrics could not be loaded.{' '}
+            <button
+              onClick={() =>
+                void Promise.all([
+                  selectedMetrics.refetch(),
+                  metrics24h.refetch(),
+                  metrics7d.refetch(),
+                  metrics30d.refetch(),
+                ])
+              }
+            >
+              Try again
+            </button>
+          </p>
+        ) : (
+          <>
+            <div className="uptime-cards">
+              <div>
+                <span>24 hours</span>
+                <strong>{percent(metrics24h.data.uptimePercent)}</strong>
+                {metrics24h.data.partial ? <small>Retention-limited</small> : null}
+              </div>
+              <div>
+                <span>7 days</span>
+                <strong>{percent(metrics7d.data.uptimePercent)}</strong>
+                {metrics7d.data.partial ? <small>Retention-limited</small> : null}
+              </div>
+              <div>
+                <span>30 days</span>
+                <strong>{percent(metrics30d.data.uptimePercent)}</strong>
+                {metrics30d.data.partial ? <small>Retention-limited</small> : null}
+              </div>
+              <div>
+                <span>p95 latency</span>
+                <strong>{milliseconds(selectedMetrics.data.latency.p95Millis)}</strong>
+              </div>
+            </div>
+            {selectedMetrics.data.partial ||
+            metrics24h.data.partial ||
+            metrics7d.data.partial ||
+            metrics30d.data.partial ? (
+              <p className="data-notice">
+                Retention limits this range; unobserved time remains excluded.
+              </p>
+            ) : null}
+            <ReliabilityChart buckets={selectedMetrics.data.buckets} />
+            <dl className="latency-facts">
+              <div>
+                <dt>Samples</dt>
+                <dd>{selectedMetrics.data.latency.sampleCount}</dd>
+              </div>
+              <div>
+                <dt>Average</dt>
+                <dd>{milliseconds(selectedMetrics.data.latency.averageMillis)}</dd>
+              </div>
+              <div>
+                <dt>Minimum</dt>
+                <dd>{milliseconds(selectedMetrics.data.latency.minMillis)}</dd>
+              </div>
+              <div>
+                <dt>Median</dt>
+                <dd>{milliseconds(selectedMetrics.data.latency.medianMillis)}</dd>
+              </div>
+              <div>
+                <dt>Maximum</dt>
+                <dd>{milliseconds(selectedMetrics.data.latency.maxMillis)}</dd>
+              </div>
+              <div>
+                <dt>Excluded</dt>
+                <dd>{duration(selectedMetrics.data.excludedMillis)}</dd>
+              </div>
+            </dl>
+          </>
+        )}
+      </section>
       <section className="detail-grid">
         <div className="panel facts">
           <div className="panel-heading">
@@ -822,6 +1176,8 @@ function MonitoringApp({
       void client.invalidateQueries({ queryKey: ['monitor', monitor.id] })
       void client.invalidateQueries({ queryKey: ['checks', monitor.id] })
       void client.invalidateQueries({ queryKey: ['history', monitor.id] })
+      void client.invalidateQueries({ queryKey: ['metrics', monitor.id] })
+      void client.invalidateQueries({ queryKey: ['analytics'] })
     },
   })
   return (
@@ -847,6 +1203,7 @@ function MonitoringApp({
           element={<ServiceDetailPage edit={(monitor) => setForm({ open: true, monitor })} />}
         />
         <Route path="/incidents" element={<IncidentsPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
         <Route
           path="*"
           element={

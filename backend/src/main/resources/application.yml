@@ -42,3 +42,10 @@ homelab-monitor:
     allowed-hosts: "${ALLOWED_HOSTS:localhost,127.0.0.1,[::1]}"
   scheduling:
     scan-delay: 1000
+  retention:
+    enabled: ${RAW_CHECK_RETENTION_ENABLED:true}
+    raw-check-days: ${RAW_CHECK_RETENTION_DAYS:30}
+    batch-size: ${RAW_CHECK_RETENTION_BATCH_SIZE:1000}
+    max-batches-per-run: ${RAW_CHECK_RETENTION_MAX_BATCHES_PER_RUN:10}
+    initial-delay: ${RAW_CHECK_RETENTION_INITIAL_DELAY:60000}
+    cleanup-delay: ${RAW_CHECK_RETENTION_CLEANUP_DELAY:86400000}

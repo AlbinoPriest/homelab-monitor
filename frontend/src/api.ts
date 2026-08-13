@@ -1,7 +1,10 @@
 import type {
+  Analytics,
   Incident,
   IncidentStatus,
   Monitor,
+  MetricWindow,
+  MonitorMetrics,
   MonitorCheck,
   MonitorInput,
   Page,
@@ -95,6 +98,9 @@ export const api = {
   getMonitor: (id: string) => request<Monitor>(`/api/v1/monitors/${id}`),
   getChecks: (id: string) => request<Page<MonitorCheck>>(`/api/v1/monitors/${id}/checks?size=20`),
   getHistory: (id: string) => request<Page<StateHistory>>(`/api/v1/monitors/${id}/history?size=20`),
+  getMonitorMetrics: (id: string, window: MetricWindow) =>
+    request<MonitorMetrics>(`/api/v1/monitors/${id}/metrics?window=${window}`),
+  getAnalytics: (window: MetricWindow) => request<Analytics>(`/api/v1/analytics?window=${window}`),
   getIncidents: (options?: {
     monitorId?: string
     status?: IncidentStatus
