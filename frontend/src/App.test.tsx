@@ -180,7 +180,10 @@ describe('monitoring dashboard', () => {
     act(() => {
       MockEventSource.latest?.onmessage?.(
         new MessageEvent('message', {
-          data: JSON.stringify({ monitorId: monitor.id, changes: ['CHECK_COMPLETED', 'STATUS_CHANGED'] }),
+          data: JSON.stringify({
+            monitorId: monitor.id,
+            changes: ['CHECK_COMPLETED', 'STATUS_CHANGED'],
+          }),
         }),
       )
     })
