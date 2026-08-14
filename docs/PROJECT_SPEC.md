@@ -14,7 +14,7 @@ This document is the durable source of product requirements and delivery status.
 | 5 | Thresholds, incidents, degraded state, pause/freshness reliability | Complete (`a0b814d`; verification, responsive browser smoke test, and review gates passed) |
 | 6 | Duration-based metrics, latency analytics, retention | Complete (verification and backend/QA/frontend review gates passed) |
 | 7 | Authenticated Server-Sent Events | Complete (verification and backend/frontend/QA review gates passed) |
-| 8 | Production Docker and security/deployment hardening | Not started |
+| 8 | Production Docker and security/deployment hardening | Complete (verification, production smoke/restore, and security/DevOps review gates passed) |
 | 9 | UI, accessibility, README, ADR, changelog, and screenshot polish | Not started |
 | 10 | Independent final audit and stable release | Not started |
 
@@ -199,4 +199,5 @@ Multi-user/RBAC, ICMP, SNMP, Proxmox, Home Assistant, Docker Engine, Tailscale, 
 
 ## Next checkpoint
 
-Begin Phase 8 from the verified Phase 7 realtime checkpoint. Implement production Docker/reverse-proxy topology and security/deployment hardening with security and DevOps review; do not pull notification delivery or Phase 9 UI polish forward.
+Begin Phase 9 from the verified Phase 8 production checkpoint. Polish the UI, accessibility, README, ADRs,
+changelog, and screenshots without pulling roadmap notifications or integrations into version 1.

@@ -1,0 +1,16 @@
+server:
+  address: 0.0.0.0
+  shutdown: graceful
+  servlet:
+    session:
+      cookie:
+        secure: true
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 40s
+
+homelab-monitor:
+  security:
+    allowed-hosts: "${ALLOWED_HOSTS:backend,localhost,127.0.0.1,[::1]}"
+    trust-proxy-headers: ${TRUST_PROXY_HEADERS:true}

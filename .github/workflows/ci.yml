@@ -64,12 +64,54 @@ jobs:
         run: npm run format:check
 
   docker-config:
-    name: Docker configuration
+    name: Production containers
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      POSTGRES_ADMIN_PASSWORD: ci-only-admin-password
+      APP_DB_PASSWORD: ci-only-application-password
+      APP_PORT: "18080"
+      COMPOSE_PROJECT_NAME: homelab-monitor-ci
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
       - name: Validate development Compose file
         run: docker compose -f docker-compose.dev.yml config --quiet
+
+      - name: Validate production Compose file
+        run: docker compose config --quiet
+
+      - name: Build and start production stack
+        run: docker compose up -d --build
+
+      - name: Wait for production health
+        run: |
+          timeout 120 sh -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" homelab-monitor-ci-frontend-1 2>/dev/null)" = healthy ]; do sleep 2; done'
+          docker compose ps
+
+      - name: Verify restricted application database role
+        run: |
+          test "$(docker compose exec -T postgres psql --username=homelab_admin --dbname=homelab_monitor --tuples-only --no-align --command="SELECT NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole FROM pg_roles WHERE rolname = 'homelab_app';")" = t
+          docker compose exec -T postgres psql --username=homelab_admin --dbname=homelab_monitor --command="ALTER ROLE homelab_app SUPERUSER CREATEDB CREATEROLE INHERIT;"
+          docker compose exec -T postgres sh /docker-entrypoint-initdb.d/10-create-app-role.sh
+          test "$(docker compose exec -T postgres psql --username=homelab_admin --dbname=homelab_monitor --tuples-only --no-align --command="SELECT NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolinherit FROM pg_roles WHERE rolname = 'homelab_app';")" = t
+          if docker compose exec -T postgres sh -c 'APP_DB_PASSWORD="$POSTGRES_PASSWORD" sh /docker-entrypoint-initdb.d/10-create-app-role.sh'; then
+            echo "The database role initializer accepted identical passwords" >&2
+            exit 1
+          fi
+          if docker compose exec -T postgres sh -c 'APP_DB_USER="$POSTGRES_USER" sh /docker-entrypoint-initdb.d/10-create-app-role.sh'; then
+            echo "The database role initializer accepted identical role names" >&2
+            exit 1
+          fi
+
+      - name: Smoke test production proxy and security boundary
+        run: sh scripts/smoke-production.sh http://127.0.0.1:18080
+
+      - name: Show production logs after failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop production stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans

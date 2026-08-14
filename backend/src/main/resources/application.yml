@@ -2,7 +2,7 @@ spring:
   application:
     name: HomeLab Monitor
   datasource:
-    url: jdbc:postgresql://localhost:${POSTGRES_PORT:5432}/${POSTGRES_DB:homelab_monitor}
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:homelab_monitor}
     username: ${POSTGRES_USER:homelab_monitor}
     password: ${POSTGRES_PASSWORD:homelab_monitor_dev}
   jpa:
@@ -40,6 +40,7 @@ server:
 homelab-monitor:
   security:
     allowed-hosts: "${ALLOWED_HOSTS:localhost,127.0.0.1,[::1]}"
+    trust-proxy-headers: ${TRUST_PROXY_HEADERS:false}
   scheduling:
     scan-delay: 1000
   retention:

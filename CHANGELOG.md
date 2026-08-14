@@ -18,3 +18,13 @@ All notable changes will be documented in this file. The project has not publish
 - Exactly-once outage incidents with recovery/pause resolution, persisted observation-validity windows, deterministic freshness expiry, migration backfill, paginated incident APIs, and responsive incident views.
 - Duration-based uptime with explicit excluded time, reachable-check latency statistics, 24-bucket reliability charts, aggregate analytics and rankings across 1h/24h/7d/30d windows, and honest retention-limited responses.
 - Configurable bounded-batch raw-check retention with a supporting time index and responsive service/dashboard analytics views.
+- Authenticated, bounded, non-replayed Server-Sent Events with session-bound teardown and authoritative client refetch.
+- Production Docker images and a health-ordered three-service Compose topology.
+- An unprivileged same-origin Nginx proxy with SSE and browser security hardening.
+- Production smoke testing plus backup, restore, update, rollback, and secret-lifecycle guidance.
+
+### Security
+
+- Private backend/database networking, Secure production sessions, fixed proxy headers, bounded resources,
+  non-root containers, read-only application filesystems, an explicit trusted-proxy boundary, source-restricted
+  first-owner bootstrap guidance, and separate PostgreSQL administrator/non-superuser application roles.

@@ -61,4 +61,7 @@ Never report a check as passing when it did not run.
 
 ## Current checkpoint
 
-Phase 7 establishes authenticated post-commit Server-Sent Events, bounded isolated delivery, session-bound stream cleanup, and reconnect-driven query resynchronization. After its verified commit, Phase 8 is next: implement production Docker/reverse-proxy topology and security/deployment hardening without pulling notifications or Phase 9 polish forward.
+Phase 8 establishes pinned production images, a loopback single-origin proxy, private backend/database networks,
+restricted database credentials, container/security hardening, and tested backup/restore operations. After its
+verified commit, Phase 9 is next: polish UI, accessibility, public documentation, ADRs, changelog, and screenshots
+without pulling roadmap notifications or integrations forward.
