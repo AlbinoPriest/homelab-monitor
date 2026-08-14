@@ -104,6 +104,14 @@ jobs:
             echo "The database role initializer accepted identical role names" >&2
             exit 1
           fi
+          if docker compose exec -T postgres sh -c 'POSTGRES_PASSWORD=REPLACE_WITH_A_LONG_RANDOM_VALUE sh /docker-entrypoint-initdb.d/10-create-app-role.sh'; then
+            echo "The database role initializer accepted the example administration password" >&2
+            exit 1
+          fi
+          if docker compose exec -T postgres sh -c 'APP_DB_PASSWORD=REPLACE_WITH_A_DIFFERENT_LONG_RANDOM_VALUE sh /docker-entrypoint-initdb.d/10-create-app-role.sh'; then
+            echo "The database role initializer accepted the example application password" >&2
+            exit 1
+          fi
 
       - name: Smoke test production proxy and security boundary
         run: sh scripts/smoke-production.sh http://127.0.0.1:18080

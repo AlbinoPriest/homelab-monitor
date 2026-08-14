@@ -21,6 +21,7 @@ import type {
   MonitorAnalyticsSummary,
   MonitorInput,
   MonitorStatus,
+  MonitorType,
 } from './types'
 
 const monitorKey = ['monitors'] as const
@@ -40,6 +41,16 @@ function Layout({
 }) {
   return (
     <div className="app-shell">
+      <a
+        className="skip-link"
+        href="#main-content"
+        onClick={(event) => {
+          event.preventDefault()
+          document.getElementById('main-content')?.focus()
+        }}
+      >
+        Skip to main content
+      </a>
       <aside className="sidebar">
         <Link className="brand" to="/" aria-label="HomeLab Monitor dashboard">
           <span className="brand-mark">HM</span>
@@ -87,14 +98,20 @@ function Layout({
             </button>
           </div>
         </header>
-        <main className="content">{children}</main>
+        <main id="main-content" className="content" tabIndex={-1}>
+          {children}
+        </main>
       </div>
     </div>
   )
 }
 
 function useMonitors() {
-  return useQuery({ queryKey: monitorKey, queryFn: api.listMonitors, refetchInterval: 15_000 })
+  return useQuery({
+    queryKey: monitorKey,
+    queryFn: api.listMonitors,
+    refetchInterval: 15_000,
+  })
 }
 
 function relativeTime(value: string | null) {
@@ -156,7 +173,7 @@ function DashboardPage({ add }: { add: () => void }) {
         </EmptyState>
       ) : (
         <>
-          <section className="metric-grid" aria-label="Service status summary">
+          <section className="metric-grid dashboard-metrics" aria-label="Service status summary">
             <Metric label="Total services" value={monitors.data.length} accent="neutral" />
             <Metric label="Online" value={counts.ONLINE} accent="online" />
             <Metric
@@ -283,11 +300,20 @@ function ServicesPage({ add, edit }: { add: () => void; edit: (monitor: Monitor)
   const monitors = useMonitors()
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'ALL' | MonitorStatus>('ALL')
+  const [type, setType] = useState<'ALL' | MonitorType>('ALL')
+  const [enabled, setEnabled] = useState<'ALL' | 'ENABLED' | 'PAUSED'>('ALL')
   const [sort, setSort] = useState('name')
   const filtered = useMemo(() => {
     if (!monitors.data) return []
     return monitors.data
       .filter((m) => status === 'ALL' || m.status === status)
+      .filter((m) => type === 'ALL' || m.type === type)
+      .filter(
+        (m) =>
+          enabled === 'ALL' ||
+          (enabled === 'ENABLED' && m.enabled) ||
+          (enabled === 'PAUSED' && !m.enabled),
+      )
       .filter((m) => `${m.name} ${m.target}`.toLowerCase().includes(query.toLowerCase()))
       .toSorted((a, b) =>
         sort === 'status'
@@ -296,7 +322,7 @@ function ServicesPage({ add, edit }: { add: () => void; edit: (monitor: Monitor)
             ? a.type.localeCompare(b.type)
             : a.name.localeCompare(b.name),
       )
-  }, [monitors.data, query, sort, status])
+  }, [enabled, monitors.data, query, sort, status, type])
   return (
     <>
       <PageHeading
@@ -329,6 +355,25 @@ function ServicesPage({ add, edit }: { add: () => void; edit: (monitor: Monitor)
           </select>
         </label>
         <label>
+          <span className="sr-only">Filter type</span>
+          <select value={type} onChange={(e) => setType(e.target.value as 'ALL' | MonitorType)}>
+            <option value="ALL">All types</option>
+            <option value="HTTP">HTTP</option>
+            <option value="TCP">TCP</option>
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Filter monitoring state</span>
+          <select
+            value={enabled}
+            onChange={(e) => setEnabled(e.target.value as 'ALL' | 'ENABLED' | 'PAUSED')}
+          >
+            <option value="ALL">All monitoring</option>
+            <option value="ENABLED">Enabled</option>
+            <option value="PAUSED">Paused</option>
+          </select>
+        </label>
+        <label>
           <span className="sr-only">Sort services</span>
           <select value={sort} onChange={(e) => setSort(e.target.value)}>
             <option value="name">Sort: name</option>
@@ -355,7 +400,7 @@ function ServicesPage({ add, edit }: { add: () => void; edit: (monitor: Monitor)
         </EmptyState>
       ) : filtered.length === 0 ? (
         <EmptyState title="No matching services">
-          Try a different search or status filter.
+          Try a different search, status, type, or monitoring-state filter.
         </EmptyState>
       ) : (
         <div className="service-grid">
@@ -1166,7 +1211,9 @@ function MonitoringApp({
 }) {
   const client = useQueryClient()
   useRealtime()
-  const [form, setForm] = useState<{ open: boolean; monitor?: Monitor }>({ open: false })
+  const [form, setForm] = useState<{ open: boolean; monitor?: Monitor }>({
+    open: false,
+  })
   const [notice, setNotice] = useState<string>()
   const save = useMutation({
     mutationFn: (input: MonitorInput) =>
@@ -1362,7 +1409,11 @@ function AuthScreen({
 
 export function App() {
   const client = useQueryClient()
-  const auth = useQuery({ queryKey: ['auth'], queryFn: api.authStatus, retry: false })
+  const auth = useQuery({
+    queryKey: ['auth'],
+    queryFn: api.authStatus,
+    retry: false,
+  })
   const logout = useMutation({
     mutationFn: api.logout,
     onSuccess: () => {

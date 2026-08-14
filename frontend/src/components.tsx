@@ -54,7 +54,7 @@ export function ErrorState({ retry }: { retry: () => void }) {
 
 export function SkeletonRows() {
   return (
-    <div className="skeleton-list" aria-label="Loading services">
+    <div className="skeleton-list" role="status" aria-label="Loading content">
       <span />
       <span />
       <span />
@@ -222,6 +222,7 @@ export function MonitorForm({ monitor, busy, error, onCancel, onSubmit }: FormPr
                   key={type}
                   type="button"
                   className={form.type === type ? 'active' : ''}
+                  aria-pressed={form.type === type}
                   onClick={() => set('type', type)}
                 >
                   {type}

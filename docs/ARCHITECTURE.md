@@ -197,5 +197,6 @@ server-side session destruction closes any associated stream. See
 - [ADR-0001: Use a modular monolith](adr/0001-use-a-modular-monolith.md)
 - [ADR-0002: Use authenticated non-replayed SSE](adr/0002-use-authenticated-sse.md)
 - [ADR-0003: Use a loopback production proxy](adr/0003-use-a-loopback-production-proxy.md)
+- [ADR-0004: Persist observation validity for availability metrics](adr/0004-persist-observation-validity.md)
 
 Add ADRs only for decisions with meaningful alternatives and consequences.

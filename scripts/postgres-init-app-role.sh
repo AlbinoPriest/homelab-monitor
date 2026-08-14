@@ -6,6 +6,13 @@ if [ -z "${APP_DB_USER:-}" ] || [ -z "${APP_DB_PASSWORD:-}" ]; then
   exit 1
 fi
 
+case "$POSTGRES_PASSWORD:$APP_DB_PASSWORD" in
+  *REPLACE_WITH_*)
+    echo "Replace the example database passwords before starting production" >&2
+    exit 1
+    ;;
+esac
+
 if [ "$APP_DB_PASSWORD" = "$POSTGRES_PASSWORD" ]; then
   echo "The application and administration database passwords must be different" >&2
   exit 1

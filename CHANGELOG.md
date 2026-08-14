@@ -22,9 +22,18 @@ All notable changes will be documented in this file. The project has not publish
 - Production Docker images and a health-ordered three-service Compose topology.
 - An unprivileged same-origin Nginx proxy with SSE and browser security hardening.
 - Production smoke testing plus backup, restore, update, rollback, and secret-lifecycle guidance.
+- Genuine dashboard, service-detail, incident, analytics, and mobile screenshots plus an observation-validity ADR.
+
+### Changed
+
+- Completed service inventory filtering with monitor-type and enabled-state controls.
+- Added skip navigation, announced loading state, selected-state semantics, balanced dashboard metrics, and a
+  responsive two-column mobile filter layout.
+- Reworked the README into a concise product, architecture, deployment, verification, security, and scope guide.
 
 ### Security
 
 - Private backend/database networking, Secure production sessions, fixed proxy headers, bounded resources,
   non-root containers, read-only application filesystems, an explicit trusted-proxy boundary, source-restricted
-  first-owner bootstrap guidance, and separate PostgreSQL administrator/non-superuser application roles.
+  first-owner bootstrap guidance, separate PostgreSQL administrator/non-superuser application roles, and
+  fail-closed rejection of unchanged production password placeholders.
