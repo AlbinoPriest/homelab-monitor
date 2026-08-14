@@ -3,8 +3,10 @@ package dev.homelabmonitor.monitor;
 import dev.homelabmonitor.incident.IncidentResolutionReason;
 import dev.homelabmonitor.incident.IncidentOutageReason;
 import dev.homelabmonitor.incident.IncidentService;
+import java.util.EnumSet;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +19,7 @@ class MonitorExecutionPersistence {
 	private final MonitorStateEngine stateEngine;
 	private final MonitorFreshness freshness;
 	private final IncidentService incidentService;
+	private final ApplicationEventPublisher eventPublisher;
 
 	MonitorExecutionPersistence(
 			MonitorRepository monitorRepository,
@@ -24,13 +27,15 @@ class MonitorExecutionPersistence {
 			MonitorStateHistoryRepository historyRepository,
 			MonitorStateEngine stateEngine,
 			MonitorFreshness freshness,
-			IncidentService incidentService) {
+			IncidentService incidentService,
+			ApplicationEventPublisher eventPublisher) {
 		this.monitorRepository = monitorRepository;
 		this.checkRepository = checkRepository;
 		this.historyRepository = historyRepository;
 		this.stateEngine = stateEngine;
 		this.freshness = freshness;
 		this.incidentService = incidentService;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@Transactional(readOnly = true)
@@ -76,6 +81,15 @@ class MonitorExecutionPersistence {
 		} else if (previous == MonitorStatus.OFFLINE && transition.status() != MonitorStatus.OFFLINE) {
 			incidentService.resolve(monitor.id(), IncidentResolutionReason.RECOVERED, result.checkedAt());
 		}
+		EnumSet<MonitorChange> changes = EnumSet.of(MonitorChange.CHECK_COMPLETED);
+		if (transition.status() != previous) changes.add(MonitorChange.STATUS_CHANGED);
+		if (previous != MonitorStatus.OFFLINE && transition.status() == MonitorStatus.OFFLINE) {
+			changes.add(MonitorChange.INCIDENT_OPENED);
+		} else if (previous == MonitorStatus.OFFLINE && transition.status() != MonitorStatus.OFFLINE) {
+			changes.add(MonitorChange.INCIDENT_RESOLVED);
+		}
+		eventPublisher.publishEvent(new MonitorChangedEvent(
+				monitor.id(), result.checkedAt(), changes, transition.status(), check.id()));
 		return Optional.of(MonitorCheckResponse.from(check));
 	}
 

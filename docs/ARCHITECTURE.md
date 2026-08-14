@@ -1,6 +1,6 @@
 # Architecture
 
-This document records durable constraints and the current design. The monitoring core, management interface, owner authentication, incident/reliability behavior, and Phase 6 analytics are implemented; sections marked **Planned** describe later phases.
+This document records durable constraints and the current design. The monitoring core, management interface, owner authentication, incident/reliability behavior, analytics, and authenticated realtime delivery are implemented; sections marked **Planned** describe later phases.
 
 ## Implemented foundation
 
@@ -24,6 +24,9 @@ focus and close with Escape, and all status presentations retain a text label at
 Incident history is rendered from the authoritative incident API. The service detail and analytics routes
 consume duration-based uptime and reachable-check latency APIs. The reliability chart uses 24 bounded buckets,
 and the UI labels retention-limited ranges rather than presenting missing coverage as uptime or downtime.
+An authenticated `EventSource` receives compact monitor-change notifications and invalidates only the affected
+TanStack Query families. Every initial connection and automatic reconnect also refetches mounted authoritative
+queries, closing the no-replay gap without making the frontend predict state transitions.
 
 Before rendering application routes, the frontend resolves authentication status and presents either the
 one-time owner setup or login form. A successful setup signs the owner in. A protected API `401` refreshes
@@ -37,7 +40,7 @@ HomeLab Monitor is a single-instance modular monolith sized for roughly 100 moni
 flowchart LR
     Owner["Authenticated owner"] -->|HTTPS| Proxy["Frontend and reverse proxy"]
     Proxy -->|Static assets| UI["React application"]
-    Proxy -->|/api and /events| API["Spring Boot modular monolith"]
+    Proxy -->|/api, including SSE| API["Spring Boot modular monolith"]
     API --> DB[("PostgreSQL")]
     API -->|Bounded HTTP/TCP checks| Targets["Home-lab services"]
 ```
@@ -46,7 +49,7 @@ Docker Compose will run the proxy/frontend, backend, and database. Only the prox
 
 ## Backend module direction
 
-The implemented `monitor` feature owns monitor configuration, execution, scheduling, checks, state history, freshness, and raw-check cleanup. `auth` owns the singleton owner/session boundary, `incident` owns outage lifecycle and queries, and `analytics` owns read-only duration/latency aggregation. A later phase adds `realtime`; `common` remains small. Modules expose narrow application-facing services and avoid a mechanical enterprise layering scheme. A notification module must not exist until notifications are implemented.
+The implemented `monitor` feature owns monitor configuration, execution, scheduling, checks, state history, freshness, raw-check cleanup, and compact domain-change events. `auth` owns the singleton owner/session boundary, `incident` owns outage lifecycle and queries, `analytics` owns read-only duration/latency aggregation, and `realtime` converts committed domain changes into authenticated SSE notifications. `common` remains small. Modules expose narrow application-facing services and avoid a mechanical enterprise layering scheme. A notification module must not exist until notifications are implemented.
 
 Controllers exchange DTOs, application services own use-case/transaction boundaries, and persistence entities remain internal. The backend owns all status and incident decisions.
 
@@ -146,12 +149,30 @@ lockout. Phase 8 must explicitly define trusted reverse-proxy source-address han
 
 PostgreSQL is authoritative. Flyway is active from Phase 1 and performs incremental migrations; Hibernate validates rather than creates schema. State history provides authoritative transition intervals, checks provide observation and latency detail, and incidents preserve confirmed outage lifecycles. The Phase 5 migration backfills last-check timestamps and active incidents for existing offline monitors. Phase 6 analytics has PostgreSQL merge overlapping observation coverage and aggregate duration and latency percentiles for the requested 1h, 24h, 7d, or 30d window; raw check rows are never materialized in the application, and each service response exposes exactly 24 chart buckets. A scheduled cleanup removes a configured maximum number of bounded raw-check batches per run after their observation coverage ends (30 days by default); metrics mark a requested range partial and count the unavailable prefix as excluded when retention truncates it. Disabling cleanup also disables the analytics retention boundary. State and incident histories are retained because they remain authoritative domain records.
 
-## Real-time delivery — planned
+## Real-time delivery
 
-SSE is preferred because updates are server-to-browser and do not require bidirectional WebSockets. Events should describe current changes rather than replaying large histories. Authentication, reconnection, transaction timing, and cleanup require tests in Phase 7 and a concise ADR when the decision is finalized.
+Authenticated clients connect to `GET /api/v1/events`. Monitor creation, configuration, deletion, accepted
+checks, status changes, incident changes, and freshness expiry publish compact domain events inside their owning
+transaction. A transactional listener forwards them only after commit, so rolled-back state is never visible.
+Payloads identify the monitor, current status, optional check, occurrence time, and one or more change causes;
+they are invalidation hints, not an alternate source of truth.
+
+The in-memory broker is intentionally single-instance and stores no replay history. It permits eight streams by
+default, sends a 15-second heartbeat, gives each connection a five-minute lifetime, and removes streams on
+completion, timeout, error, queue overflow, logout, session expiry, or shutdown. Each subscription has a bounded
+pending queue and one delivery lane on a dedicated bounded executor. A stalled browser therefore cannot block
+monitor completion, scheduling, freshness, heartbeats for healthy clients, or database transactions.
+
+The browser uses native EventSource reconnection. Since the server does not replay events, every connection open
+invalidates all mounted authoritative query families; live messages are coalesced briefly and invalidate only the
+query families implied by their change causes. EventSource errors separately check auth status because the API
+does not expose a failed stream's HTTP status to JavaScript. Logout or expiry returns the UI to its auth gate and
+server-side session destruction closes any associated stream. See
+[ADR-0002: Use authenticated non-replayed SSE](adr/0002-use-authenticated-sse.md).
 
 ## Decision records
 
 - [ADR-0001: Use a modular monolith](adr/0001-use-a-modular-monolith.md)
+- [ADR-0002: Use authenticated non-replayed SSE](adr/0002-use-authenticated-sse.md)
 
 Add ADRs only for decisions with meaningful alternatives and consequences.

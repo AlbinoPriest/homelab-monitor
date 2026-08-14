@@ -3,6 +3,7 @@ package dev.homelabmonitor.auth;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -25,13 +26,15 @@ class AuthController {
 	private final OwnerService ownerService;
 	private final AuthenticationManager authenticationManager;
 	private final LoginAttemptLimiter loginAttemptLimiter;
+	private final ApplicationEventPublisher eventPublisher;
 	private final SecurityContextRepository contextRepository = new HttpSessionSecurityContextRepository();
 
 	AuthController(OwnerService ownerService, AuthenticationManager authenticationManager,
-			LoginAttemptLimiter loginAttemptLimiter) {
+			LoginAttemptLimiter loginAttemptLimiter, ApplicationEventPublisher eventPublisher) {
 		this.ownerService = ownerService;
 		this.authenticationManager = authenticationManager;
 		this.loginAttemptLimiter = loginAttemptLimiter;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@GetMapping("/status")
@@ -70,7 +73,10 @@ class AuthController {
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	void logout(HttpServletRequest request) {
 		SecurityContextHolder.clearContext();
-		if (request.getSession(false) != null) request.getSession(false).invalidate();
+		if (request.getSession(false) != null) {
+			eventPublisher.publishEvent(new OwnerSessionEndedEvent(request.getSession(false).getId()));
+			request.getSession(false).invalidate();
+		}
 	}
 
 	private void signIn(OwnerPrincipal principal, String password,

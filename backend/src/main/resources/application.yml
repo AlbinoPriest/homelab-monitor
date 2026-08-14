@@ -49,3 +49,7 @@ homelab-monitor:
     max-batches-per-run: ${RAW_CHECK_RETENTION_MAX_BATCHES_PER_RUN:10}
     initial-delay: ${RAW_CHECK_RETENTION_INITIAL_DELAY:60000}
     cleanup-delay: ${RAW_CHECK_RETENTION_CLEANUP_DELAY:86400000}
+  realtime:
+    max-connections: ${SSE_MAX_CONNECTIONS:8}
+    connection-timeout: ${SSE_CONNECTION_TIMEOUT:300000}
+    heartbeat-delay: ${SSE_HEARTBEAT_DELAY:15000}
