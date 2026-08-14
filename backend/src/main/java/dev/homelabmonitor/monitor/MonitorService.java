@@ -5,8 +5,11 @@ import dev.homelabmonitor.incident.IncidentResolutionReason;
 import dev.homelabmonitor.incident.IncidentService;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -21,6 +24,7 @@ class MonitorService {
 	private final MonitorRequestValidator validator;
 	private final Clock clock;
 	private final IncidentService incidentService;
+	private final ApplicationEventPublisher eventPublisher;
 
 	MonitorService(
 			MonitorRepository monitorRepository,
@@ -28,13 +32,15 @@ class MonitorService {
 			MonitorStateHistoryRepository historyRepository,
 			MonitorRequestValidator validator,
 			Clock clock,
-			IncidentService incidentService) {
+			IncidentService incidentService,
+			ApplicationEventPublisher eventPublisher) {
 		this.monitorRepository = monitorRepository;
 		this.checkRepository = checkRepository;
 		this.historyRepository = historyRepository;
 		this.validator = validator;
 		this.clock = clock;
 		this.incidentService = incidentService;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@Transactional
@@ -43,6 +49,8 @@ class MonitorService {
 		Monitor monitor = monitorRepository.save(Monitor.create(validator.validate(request), now));
 		historyRepository.save(MonitorStateHistory.create(
 				monitor, null, monitor.status(), now, StateChangeReason.MONITOR_CREATED));
+		eventPublisher.publishEvent(new MonitorChangedEvent(
+				monitor.id(), now, Set.of(MonitorChange.MONITOR_CREATED), monitor.status(), null));
 		return MonitorResponse.from(monitor);
 	}
 
@@ -75,6 +83,10 @@ class MonitorService {
 		if (previous == MonitorStatus.OFFLINE && !monitor.enabled()) {
 			incidentService.resolve(monitor.id(), IncidentResolutionReason.MONITORING_PAUSED, now);
 		}
+		EnumSet<MonitorChange> changes = EnumSet.of(MonitorChange.MONITOR_UPDATED);
+		if (previous != monitor.status()) changes.add(MonitorChange.STATUS_CHANGED);
+		if (previous == MonitorStatus.OFFLINE && !monitor.enabled()) changes.add(MonitorChange.INCIDENT_RESOLVED);
+		eventPublisher.publishEvent(new MonitorChangedEvent(monitor.id(), now, changes, monitor.status(), null));
 		return MonitorResponse.from(monitor);
 	}
 
@@ -82,6 +94,8 @@ class MonitorService {
 	void delete(UUID id) {
 		Monitor monitor = monitorRepository.findByIdForUpdate(id).orElseThrow(() -> new MonitorNotFoundException(id));
 		monitorRepository.delete(monitor);
+		eventPublisher.publishEvent(new MonitorChangedEvent(
+				id, clock.instant(), Set.of(MonitorChange.MONITOR_DELETED), null, null));
 	}
 
 	@Transactional(readOnly = true)

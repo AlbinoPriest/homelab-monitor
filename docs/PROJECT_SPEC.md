@@ -13,7 +13,7 @@ This document is the durable source of product requirements and delivery status.
 | 4 | First-owner setup and session authentication | Complete (`c88579f`; verification, browser smoke test, and review gates passed) |
 | 5 | Thresholds, incidents, degraded state, pause/freshness reliability | Complete (`a0b814d`; verification, responsive browser smoke test, and review gates passed) |
 | 6 | Duration-based metrics, latency analytics, retention | Complete (verification and backend/QA/frontend review gates passed) |
-| 7 | Authenticated Server-Sent Events | Not started |
+| 7 | Authenticated Server-Sent Events | Complete (verification and backend/frontend/QA review gates passed) |
 | 8 | Production Docker and security/deployment hardening | Not started |
 | 9 | UI, accessibility, README, ADR, changelog, and screenshot polish | Not started |
 | 10 | Independent final audit and stable release | Not started |
@@ -199,4 +199,4 @@ Multi-user/RBAC, ICMP, SNMP, Proxmox, Home Assistant, Docker Engine, Tailscale, 
 
 ## Next checkpoint
 
-Begin Phase 7 from the verified Phase 6 metrics/analytics checkpoint. Implement authenticated Server-Sent Events with bounded lifecycle management and backend/frontend/QA review; do not pull production topology or notification delivery forward.
+Begin Phase 8 from the verified Phase 7 realtime checkpoint. Implement production Docker/reverse-proxy topology and security/deployment hardening with security and DevOps review; do not pull notification delivery or Phase 9 UI polish forward.

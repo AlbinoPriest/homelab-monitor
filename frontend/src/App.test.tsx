@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -138,6 +138,7 @@ describe('monitoring dashboard', () => {
     cleanup()
     vi.restoreAllMocks()
     resetCsrfForTests()
+    vi.unstubAllGlobals()
   })
 
   it('summarizes status and links to monitored services', async () => {
@@ -151,6 +152,118 @@ describe('monitoring dashboard', () => {
     expect((await screen.findAllByText('NAS dashboard')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('ONLINE').length).toBeGreaterThan(0)
     expect(screen.getByText('Everything looks steady')).toBeInTheDocument()
+  })
+
+  it('refreshes authoritative monitor state after a realtime event', async () => {
+    class MockEventSource {
+      static latest: MockEventSource | undefined
+      onopen: (() => void) | null = null
+      onmessage: ((event: MessageEvent<string>) => void) | null = null
+      onerror: (() => void) | null = null
+      close = vi.fn()
+
+      constructor() {
+        MockEventSource.latest = this
+      }
+    }
+    vi.stubGlobal('EventSource', MockEventSource)
+    let current = monitor
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (isAuthStatus(input)) return response(authenticated)
+      if (String(input).includes('/analytics')) return response(analyticsFixture)
+      return response([current])
+    })
+    renderApp()
+    expect(await screen.findByText('Everything looks steady')).toBeInTheDocument()
+
+    current = { ...monitor, status: 'OFFLINE' }
+    act(() => {
+      MockEventSource.latest?.onmessage?.(
+        new MessageEvent('message', {
+          data: JSON.stringify({
+            monitorId: monitor.id,
+            changes: ['CHECK_COMPLETED', 'STATUS_CHANGED'],
+          }),
+        }),
+      )
+    })
+
+    await waitFor(() => expect(screen.getAllByText('OFFLINE').length).toBeGreaterThan(0))
+  })
+
+  it('resynchronizes on reconnect and cancels queued refreshes during teardown', async () => {
+    class MockEventSource {
+      static latest: MockEventSource | undefined
+      onopen: (() => void) | null = null
+      onmessage: ((event: MessageEvent<string>) => void) | null = null
+      onerror: (() => void) | null = null
+      close = vi.fn()
+
+      constructor() {
+        MockEventSource.latest = this
+      }
+    }
+    vi.stubGlobal('EventSource', MockEventSource)
+    let current = monitor
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (isAuthStatus(input)) return response(authenticated)
+      if (String(input).includes('/analytics')) return response(analyticsFixture)
+      return response([current])
+    })
+    const view = renderApp()
+    expect(await screen.findByText('Everything looks steady')).toBeInTheDocument()
+
+    current = { ...monitor, status: 'OFFLINE' }
+    act(() => MockEventSource.latest?.onopen?.())
+    await waitFor(() => expect(screen.getAllByText('OFFLINE').length).toBeGreaterThan(0))
+
+    act(() => {
+      MockEventSource.latest?.onmessage?.(
+        new MessageEvent('message', {
+          data: JSON.stringify({ monitorId: monitor.id, changes: ['CHECK_COMPLETED'] }),
+        }),
+      )
+    })
+    const requestsBeforeTeardown = fetch.mock.calls.length
+    view.unmount()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(fetch).toHaveBeenCalledTimes(requestsBeforeTeardown)
+    expect(MockEventSource.latest?.close).toHaveBeenCalled()
+  })
+
+  it('returns to the sign-in gate when the realtime session expires', async () => {
+    class MockEventSource {
+      static latest: MockEventSource | undefined
+      onopen: (() => void) | null = null
+      onmessage: ((event: MessageEvent<string>) => void) | null = null
+      onerror: (() => void) | null = null
+      close = vi.fn()
+
+      constructor() {
+        MockEventSource.latest = this
+      }
+    }
+    vi.stubGlobal('EventSource', MockEventSource)
+    let authRequests = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (isAuthStatus(input)) {
+        authRequests += 1
+        return response(
+          authRequests === 1
+            ? authenticated
+            : { ...authenticated, authenticated: false, owner: null },
+        )
+      }
+      if (String(input).includes('/analytics')) return response(analyticsFixture)
+      return response([monitor])
+    })
+    renderApp()
+    expect(await screen.findByText('Everything looks steady')).toBeInTheDocument()
+
+    act(() => MockEventSource.latest?.onerror?.())
+
+    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
+    expect(MockEventSource.latest?.close).toHaveBeenCalled()
   })
 
   it('keeps live monitor state visible when the analytics summary fails', async () => {

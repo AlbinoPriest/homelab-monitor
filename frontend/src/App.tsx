@@ -12,6 +12,7 @@ import {
 } from './components'
 import { Icons } from './icons'
 import ReliabilityChart from './ReliabilityChart'
+import { useRealtime } from './useRealtime'
 import type {
   Incident,
   IncidentStatus,
@@ -1164,6 +1165,7 @@ function MonitoringApp({
   loggingOut: boolean
 }) {
   const client = useQueryClient()
+  useRealtime()
   const [form, setForm] = useState<{ open: boolean; monitor?: Monitor }>({ open: false })
   const [notice, setNotice] = useState<string>()
   const save = useMutation({

@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 
 class MonitorExecutionPersistenceTests {
 
@@ -30,8 +31,10 @@ class MonitorExecutionPersistenceTests {
 		MonitorStateHistoryRepository history = mock(MonitorStateHistoryRepository.class);
 		when(monitors.findByIdForUpdate(monitor.id())).thenReturn(Optional.of(monitor));
 		when(checks.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
 		MonitorExecutionPersistence persistence = new MonitorExecutionPersistence(
-				monitors, checks, history, new MonitorStateEngine(), freshness, mock(IncidentService.class));
+				monitors, checks, history, new MonitorStateEngine(), freshness,
+				mock(IncidentService.class), events);
 
 		assertThat(persistence.complete(snapshot, result)).isPresent();
 
@@ -47,5 +50,10 @@ class MonitorExecutionPersistenceTests {
 								result.checkedAt(), StateChangeReason.CHECK_SUCCEEDED));
 		assertThat(monitor.lastCheckedAt()).isEqualTo(result.checkedAt());
 		assertThat(monitor.observationValidUntil()).isEqualTo(freshness.validUntil(monitor, result.checkedAt()));
+		ArgumentCaptor<MonitorChangedEvent> published = ArgumentCaptor.forClass(MonitorChangedEvent.class);
+		verify(events).publishEvent(published.capture());
+		assertThat(published.getValue().changes())
+				.containsExactlyInAnyOrder(MonitorChange.CHECK_COMPLETED, MonitorChange.STATUS_CHANGED);
+		assertThat(published.getValue().monitorId()).isEqualTo(monitor.id());
 	}
 }

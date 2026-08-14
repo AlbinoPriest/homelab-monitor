@@ -61,4 +61,4 @@ Never report a check as passing when it did not run.
 
 ## Current checkpoint
 
-Phase 4 establishes singleton owner setup, server-side session authentication, authenticated APIs and frontend route gating. After its verified commit, Phase 5 is next: implement incident lifecycle and reliability semantics without pulling analytics or realtime delivery forward.
+Phase 7 establishes authenticated post-commit Server-Sent Events, bounded isolated delivery, session-bound stream cleanup, and reconnect-driven query resynchronization. After its verified commit, Phase 8 is next: implement production Docker/reverse-proxy topology and security/deployment hardening without pulling notifications or Phase 9 polish forward.
