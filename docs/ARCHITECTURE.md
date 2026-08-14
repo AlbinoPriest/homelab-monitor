@@ -1,13 +1,16 @@
 # Architecture
 
-This document records durable constraints and the current design. The monitoring core, management interface, owner authentication, incident/reliability behavior, analytics, and authenticated realtime delivery are implemented; sections marked **Planned** describe later phases.
+This document records durable constraints and the current design. The monitoring core, management interface,
+owner authentication, incident/reliability behavior, analytics, authenticated realtime delivery, and production
+container topology are implemented; sections marked **Planned** describe later phases.
 
 ## Implemented foundation
 
 - The Java 21/Spring Boot modular monolith starts with Spring MVC, Data JPA, Validation, Security, Actuator, and development-only OpenAPI support.
 - PostgreSQL is the application database. Flyway owns schema evolution and Hibernate uses `ddl-auto=validate`; domain migrations begin with Phase 2.
 - The React/TypeScript application uses Vite, React Router, and TanStack Query. The dashboard and service-management routes consume the versioned monitor APIs through the same-origin development proxy.
-- Development runs PostgreSQL in Docker Compose while backend and frontend run directly. Production container topology remains Phase 8 work.
+- Development runs PostgreSQL in Docker Compose while backend and frontend run directly. Production uses
+  unprivileged frontend and backend images plus PostgreSQL, with health-ordered startup and bounded resources.
 - A singleton owner is created through first-run setup and authenticated with a server-side Spring Security session. All monitor APIs require that owner; setup, login, auth status, CSRF bootstrap, and health remain public. Mutations require CSRF protection, while loopback binding and Host validation remain defense in depth for development.
 
 ## Frontend application
@@ -32,7 +35,7 @@ Before rendering application routes, the frontend resolves authentication status
 one-time owner setup or login form. A successful setup signs the owner in. A protected API `401` refreshes
 the authentication gate, and logout clears both the server session and cached client state.
 
-## System context — planned
+## System context
 
 HomeLab Monitor is a single-instance modular monolith sized for roughly 100 monitors.
 
@@ -45,7 +48,15 @@ flowchart LR
     API -->|Bounded HTTP/TCP checks| Targets["Home-lab services"]
 ```
 
-Docker Compose will run the proxy/frontend, backend, and database. Only the proxy/frontend should be public in production; PostgreSQL remains internal.
+Docker Compose runs the proxy/frontend, backend, and database. Only the unprivileged frontend publishes a
+loopback host port; a host-managed TLS terminator provides the browser origin. Backend traffic crosses the
+edge network, PostgreSQL is isolated on an internal data network, and the backend retains outbound edge access
+for monitor checks. See [ADR-0003](adr/0003-use-a-loopback-production-proxy.md).
+
+PostgreSQL initialization uses a dedicated administrative role. A first-start script creates a separate
+non-superuser application role with access only to the application database and schema; Spring and Flyway
+receive only that restricted role. The initial owner must be created while the HTTPS origin is limited to the
+operator's source, because setup necessarily remains public until the singleton owner row exists.
 
 ## Backend module direction
 
@@ -133,17 +144,28 @@ The owner can intentionally monitor private network services. Therefore target f
 - TCP validates host, port, and timeout and uses Java socket APIs directly. DNS resolution runs on a separate two-thread bounded pool and shares the check's end-to-end deadline, so a slow system resolver cannot consume the monitor worker pool indefinitely.
 - No target input reaches a shell.
 - API errors and logs omit secrets and internal exception details.
-- Session cookies, CSRF, CORS/same-origin behavior, Actuator exposure, and reverse-proxy headers require dedicated review in Phases 4 and 8.
+- Session cookies, CSRF, CORS/same-origin behavior, Actuator exposure, and reverse-proxy headers are part of the
+  authenticated single-origin boundary and production review surface.
 
 Private IP addresses remain allowed by design. Monitor reads, configuration, and manual execution are owner-only. The backend also binds to `127.0.0.1` and accepts only `localhost`, `127.0.0.1`, and `[::1]` Host headers by default, preventing browser DNS-rebinding access during development. `SERVER_ADDRESS` and matching `ALLOWED_HOSTS` values are explicit opt-in overrides for trusted remote development only.
 
 The database enforces exactly one owner. Email addresses are normalized, passwords are BCrypt-hashed at
 strength 12, and setup races fail closed. Authentication rotates an existing session identifier; logout
 invalidates the session. The session cookie is HttpOnly, SameSite=Lax, expires after 30 minutes of
-inactivity by default, and must be configured Secure when served through production HTTPS.
+inactivity by default, and is unconditionally Secure in the production profile.
 Login attempts are bounded over a rolling one-minute window globally and by direct source address and
 normalized account. Throttling returns a generic `429` with `Retry-After` and expires without permanent
-lockout. Phase 8 must explicitly define trusted reverse-proxy source-address handling before production.
+lockout. Development ignores forwarding headers. In production, the host TLS terminator overwrites
+`X-Forwarded-For`; the isolated frontend accepts only one IP-shaped value from that trusted hop, falls back to
+its immediate peer otherwise, and overwrites `X-Real-IP` for the backend. The backend validates one IP literal
+from that header. This trust is valid only because the frontend listener is restricted to the TLS proxy, the
+backend is unpublished, and the edge network must not contain untrusted containers.
+
+The frontend proxy fixes the internal `Host` value, disables SSE buffering, bounds proxy timeouts and request
+body size, and supplies CSP, clickjacking, MIME-sniffing, referrer, permissions, and HSTS headers. The backend
+and database have no host port; only health is exposed through Actuator and OpenAPI stays disabled outside the
+development profile. Production frontend and backend containers run non-root with read-only roots, dropped
+capabilities, `no-new-privileges`, PID/resource limits, and explicit graceful shutdown windows.
 
 ## Data and migrations
 
@@ -174,5 +196,6 @@ server-side session destruction closes any associated stream. See
 
 - [ADR-0001: Use a modular monolith](adr/0001-use-a-modular-monolith.md)
 - [ADR-0002: Use authenticated non-replayed SSE](adr/0002-use-authenticated-sse.md)
+- [ADR-0003: Use a loopback production proxy](adr/0003-use-a-loopback-production-proxy.md)
 
 Add ADRs only for decisions with meaningful alternatives and consequences.

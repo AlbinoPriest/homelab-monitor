@@ -3,7 +3,8 @@
 HomeLab Monitor is a self-hosted application for tracking the availability, latency, reliability, and incidents of HTTP/HTTPS and TCP services on a home network.
 
 > [!IMPORTANT]
-> The repository contains the monitoring core, management interface, owner authentication, incident/reliability behavior, and Phase 6 metrics/analytics implementation. Realtime updates and production deployment remain planned.
+> The repository contains the monitoring core, authenticated management and analytics interface, incident and
+> reliability behavior, authenticated realtime updates, and a hardened production Compose deployment.
 
 ## Version 1 scope
 
@@ -20,7 +21,9 @@ Vendor-specific integrations, notifications, public status pages, and multi-user
 
 ## Architecture
 
-HomeLab Monitor will be a modular monolith: a Spring Boot backend, React frontend, and PostgreSQL database deployed as three Docker Compose services. This keeps deployment simple while preserving clear feature boundaries.
+HomeLab Monitor is a modular monolith: a Spring Boot backend, React frontend/reverse proxy, and PostgreSQL
+database deployed as three Docker Compose services. This keeps deployment simple while preserving clear
+feature boundaries.
 
 ```mermaid
 flowchart LR
@@ -44,7 +47,8 @@ docs/              Product, architecture, deployment, and ADR documentation
 
 ## Development status
 
-Phase 6 adds duration-based uptime, reachable-check latency statistics, retention-aware analytics, service reliability charts, and bounded raw-check cleanup to the authenticated monitoring application.
+Phase 8 provides production images, a single-origin reverse proxy, private backend/database networking,
+container health/resource hardening, trusted proxy handling, repeatable smoke checks, and documented recovery.
 
 For a local development run, follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). The authoritative requirements and phase status live in [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md).
 

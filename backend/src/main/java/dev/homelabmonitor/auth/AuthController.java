@@ -26,14 +26,17 @@ class AuthController {
 	private final OwnerService ownerService;
 	private final AuthenticationManager authenticationManager;
 	private final LoginAttemptLimiter loginAttemptLimiter;
+	private final ClientAddressResolver clientAddressResolver;
 	private final ApplicationEventPublisher eventPublisher;
 	private final SecurityContextRepository contextRepository = new HttpSessionSecurityContextRepository();
 
 	AuthController(OwnerService ownerService, AuthenticationManager authenticationManager,
-			LoginAttemptLimiter loginAttemptLimiter, ApplicationEventPublisher eventPublisher) {
+			LoginAttemptLimiter loginAttemptLimiter, ClientAddressResolver clientAddressResolver,
+			ApplicationEventPublisher eventPublisher) {
 		this.ownerService = ownerService;
 		this.authenticationManager = authenticationManager;
 		this.loginAttemptLimiter = loginAttemptLimiter;
+		this.clientAddressResolver = clientAddressResolver;
 		this.eventPublisher = eventPublisher;
 	}
 
@@ -57,7 +60,7 @@ class AuthController {
 	AuthResponse login(@Valid @RequestBody AuthRequests.Login request,
 			HttpServletRequest servletRequest, HttpServletResponse response) {
 		ownerService.validateLoginPassword(request.password());
-		loginAttemptLimiter.acquire(servletRequest.getRemoteAddr(), request.email());
+		loginAttemptLimiter.acquire(clientAddressResolver.resolve(servletRequest), request.email());
 		try {
 			Authentication authentication = authenticationManager.authenticate(
 					UsernamePasswordAuthenticationToken.unauthenticated(request.email(), request.password()));
