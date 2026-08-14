@@ -15,7 +15,7 @@ This document is the durable source of product requirements and delivery status.
 | 6 | Duration-based metrics, latency analytics, retention | Complete (verification and backend/QA/frontend review gates passed) |
 | 7 | Authenticated Server-Sent Events | Complete (verification and backend/frontend/QA review gates passed) |
 | 8 | Production Docker and security/deployment hardening | Complete (verification, production smoke/restore, and security/DevOps review gates passed) |
-| 9 | UI, accessibility, README, ADR, changelog, and screenshot polish | Not started |
+| 9 | UI, accessibility, README, ADR, changelog, and screenshot polish | Complete (verification and frontend/repository review gates passed) |
 | 10 | Independent final audit and stable release | Not started |
 
 Update this table at each checkpoint. A phase is not complete until behavior, verification, review, fixes, documentation, and coherent commits are complete.
@@ -199,5 +199,6 @@ Multi-user/RBAC, ICMP, SNMP, Proxmox, Home Assistant, Docker Engine, Tailscale, 
 
 ## Next checkpoint
 
-Begin Phase 9 from the verified Phase 8 production checkpoint. Polish the UI, accessibility, README, ADRs,
-changelog, and screenshots without pulling roadmap notifications or integrations into version 1.
+Begin Phase 10 from the verified Phase 9 presentation checkpoint. Run the independent final audit, full
+verification, production smoke and deployment inspection, secret/dead-file scan, release-readiness review, and
+only create a stable tag if the resulting evidence justifies it.

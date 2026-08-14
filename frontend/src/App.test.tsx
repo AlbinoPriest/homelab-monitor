@@ -220,7 +220,10 @@ describe('monitoring dashboard', () => {
     act(() => {
       MockEventSource.latest?.onmessage?.(
         new MessageEvent('message', {
-          data: JSON.stringify({ monitorId: monitor.id, changes: ['CHECK_COMPLETED'] }),
+          data: JSON.stringify({
+            monitorId: monitor.id,
+            changes: ['CHECK_COMPLETED'],
+          }),
         }),
       )
     })
@@ -293,7 +296,9 @@ describe('monitoring dashboard', () => {
       isAuthStatus(input) ? response(authenticated) : response([monitor, offline]),
     )
     renderApp('/services')
-    const search = await screen.findByRole('textbox', { name: 'Search services' })
+    const search = await screen.findByRole('textbox', {
+      name: 'Search services',
+    })
     await userEvent.type(search, 'router')
     expect(screen.getByText('Router SSH')).toBeInTheDocument()
     expect(screen.queryByText('NAS dashboard')).not.toBeInTheDocument()
@@ -301,6 +306,42 @@ describe('monitoring dashboard', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Filter status' }), 'ONLINE')
     expect(screen.getByText('NAS dashboard')).toBeInTheDocument()
     expect(screen.queryByText('Router SSH')).not.toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Filter status' }), 'ALL')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Filter type' }), 'TCP')
+    expect(screen.getByText('Router SSH')).toBeInTheDocument()
+    expect(screen.queryByText('NAS dashboard')).not.toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Filter type' }), 'ALL')
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Filter monitoring state' }),
+      'PAUSED',
+    )
+    expect(screen.getByText('No matching services')).toBeInTheDocument()
+  })
+
+  it('exposes skip navigation and selected monitor type semantics', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      isAuthStatus(input) ? response(authenticated) : response([]),
+    )
+    renderApp('/services')
+    const skipLink = await screen.findByRole('link', {
+      name: 'Skip to main content',
+    })
+    expect(skipLink).toHaveAttribute('href', '#main-content')
+    expect(document.querySelector('main#main-content')).toHaveAttribute('tabindex', '-1')
+    await userEvent.click(skipLink)
+    expect(document.querySelector('main#main-content')).toHaveFocus()
+
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Add monitor' }))[0])
+    const dialog = screen.getByRole('dialog', { name: 'Add a monitor' })
+    expect(within(dialog).getByRole('button', { name: 'HTTP' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await userEvent.click(within(dialog).getByRole('button', { name: 'TCP' }))
+    expect(within(dialog).getByRole('button', { name: 'TCP' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
   })
 
   it('adapts the create form for TCP and sends a CSRF-protected request', async () => {
@@ -309,11 +350,21 @@ describe('monitoring dashboard', () => {
       if (isAuthStatus(input)) return response(authenticated)
       if (url.includes('/metrics')) return response(metricsFixture())
       if (url.endsWith('/csrf')) {
-        return response({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'test-token' })
+        return response({
+          headerName: 'X-XSRF-TOKEN',
+          parameterName: '_csrf',
+          token: 'test-token',
+        })
       }
       if (url.endsWith('/monitors') && init?.method === 'POST') {
         return response(
-          { ...monitor, name: 'Router SSH', type: 'TCP', target: 'router.lan', port: 22 },
+          {
+            ...monitor,
+            name: 'Router SSH',
+            type: 'TCP',
+            target: 'router.lan',
+            port: 22,
+          },
           201,
         )
       }
@@ -344,7 +395,11 @@ describe('monitoring dashboard', () => {
       if (isAuthStatus(input)) return response(authenticated)
       if (url.includes('/metrics')) return response(metricsFixture())
       if (url.endsWith('/csrf')) {
-        return response({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' })
+        return response({
+          headerName: 'X-XSRF-TOKEN',
+          parameterName: '_csrf',
+          token: 'token',
+        })
       }
       if (url.endsWith('/checks') && init?.method === 'POST') {
         return response({
@@ -375,9 +430,21 @@ describe('monitoring dashboard', () => {
         })
       }
       if (url.includes('/history'))
-        return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 20,
+          totalElements: 0,
+          totalPages: 0,
+        })
       if (url.includes('/incidents'))
-        return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 100,
+          totalElements: 0,
+          totalPages: 0,
+        })
       return response(monitor)
     })
     renderApp(`/services/${monitor.id}`)
@@ -404,10 +471,22 @@ describe('monitoring dashboard', () => {
         return response(metricsFixture(window))
       }
       if (url.includes('/checks') || url.includes('/history')) {
-        return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 20,
+          totalElements: 0,
+          totalPages: 0,
+        })
       }
       if (url.includes('/incidents')) {
-        return response({ content: [], page: 0, size: 10, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 10,
+          totalElements: 0,
+          totalPages: 0,
+        })
       }
       return response(monitor)
     })
@@ -434,10 +513,22 @@ describe('monitoring dashboard', () => {
         return response(url.includes('window=30d') ? { ...metrics, partial: true } : metrics)
       }
       if (url.includes('/checks') || url.includes('/history')) {
-        return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 20,
+          totalElements: 0,
+          totalPages: 0,
+        })
       }
       if (url.includes('/incidents')) {
-        return response({ content: [], page: 0, size: 10, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 10,
+          totalElements: 0,
+          totalPages: 0,
+        })
       }
       return response(monitor)
     })
@@ -456,7 +547,13 @@ describe('monitoring dashboard', () => {
         return response({ detail: 'Unavailable' }, 503)
       }
       if (url.includes('/incidents'))
-        return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 100,
+          totalElements: 0,
+          totalPages: 0,
+        })
       return response(monitor)
     })
     renderApp(`/services/${monitor.id}`)
@@ -472,16 +569,28 @@ describe('monitoring dashboard', () => {
       if (url.includes('/metrics')) return response(metricsFixture())
       if (url.includes('/history')) return new Promise<Response>(() => undefined)
       if (url.includes('/checks')) {
-        return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 20,
+          totalElements: 0,
+          totalPages: 0,
+        })
       }
       if (url.includes('/incidents'))
-        return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 100,
+          totalElements: 0,
+          totalPages: 0,
+        })
       return response(monitor)
     })
     renderApp(`/services/${monitor.id}`)
     expect(await screen.findByRole('heading', { name: 'State history' })).toBeInTheDocument()
     expect(screen.queryByText('No state transitions recorded.')).not.toBeInTheDocument()
-    expect(screen.getAllByLabelText('Loading services').length).toBeGreaterThan(0)
+    expect(screen.getAllByLabelText('Loading content').length).toBeGreaterThan(0)
   })
 
   it('focuses the safe delete action and reports deletion failure', async () => {
@@ -490,19 +599,37 @@ describe('monitoring dashboard', () => {
       if (isAuthStatus(input)) return response(authenticated)
       if (url.includes('/metrics')) return response(metricsFixture())
       if (url.endsWith('/csrf')) {
-        return response({ headerName: 'X-XSRF-TOKEN', parameterName: '_csrf', token: 'token' })
+        return response({
+          headerName: 'X-XSRF-TOKEN',
+          parameterName: '_csrf',
+          token: 'token',
+        })
       }
       if (init?.method === 'DELETE') return response({ detail: 'Deletion failed safely.' }, 500)
       if (url.includes('/checks') || url.includes('/history')) {
-        return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 20,
+          totalElements: 0,
+          totalPages: 0,
+        })
       }
       if (url.includes('/incidents'))
-        return response({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 100,
+          totalElements: 0,
+          totalPages: 0,
+        })
       return response(monitor)
     })
     renderApp(`/services/${monitor.id}`)
     await userEvent.click(await screen.findByRole('button', { name: 'Delete service' }))
-    const dialog = screen.getByRole('alertdialog', { name: 'Delete NAS dashboard?' })
+    const dialog = screen.getByRole('alertdialog', {
+      name: 'Delete NAS dashboard?',
+    })
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete monitor' }))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Deletion failed safely.')
@@ -513,7 +640,11 @@ describe('monitoring dashboard', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input)
       if (isAuthStatus(input)) {
-        return response({ setupRequired: true, authenticated: false, owner: null })
+        return response({
+          setupRequired: true,
+          authenticated: false,
+          owner: null,
+        })
       }
       if (url.endsWith('/csrf')) {
         return response({
@@ -617,10 +748,22 @@ describe('monitoring dashboard', () => {
       if (url.includes('/metrics')) return response(metricsFixture())
       if (url.includes('/incidents')) {
         const page = url.includes('page=1') ? 1 : 0
-        return response({ content: [incident], page, size: 10, totalElements: 11, totalPages: 2 })
+        return response({
+          content: [incident],
+          page,
+          size: 10,
+          totalElements: 11,
+          totalPages: 2,
+        })
       }
       if (url.includes('/checks') || url.includes('/history')) {
-        return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })
+        return response({
+          content: [],
+          page: 0,
+          size: 20,
+          totalElements: 0,
+          totalPages: 0,
+        })
       }
       return response(monitor)
     })
@@ -649,10 +792,22 @@ describe('monitoring dashboard', () => {
       if (isAuthStatus(input)) return response(authenticated)
       if (url.includes('/incidents')) {
         if (url.includes('status=ACTIVE')) {
-          return response({ content: [], page: 0, size: 1, totalElements: 0, totalPages: 0 })
+          return response({
+            content: [],
+            page: 0,
+            size: 1,
+            totalElements: 0,
+            totalPages: 0,
+          })
         }
         if (url.includes('page=1')) {
-          return response({ content: [], page: 1, size: 20, totalElements: 1, totalPages: 1 })
+          return response({
+            content: [],
+            page: 1,
+            size: 20,
+            totalElements: 1,
+            totalPages: 1,
+          })
         }
         return response({
           content: [incident],
@@ -717,7 +872,11 @@ describe('monitoring dashboard', () => {
   it('shows a generic login error without entering the application', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       if (isAuthStatus(input)) {
-        return response({ setupRequired: false, authenticated: false, owner: null })
+        return response({
+          setupRequired: false,
+          authenticated: false,
+          owner: null,
+        })
       }
       if (String(input).endsWith('/csrf')) {
         return response({
@@ -743,7 +902,11 @@ describe('monitoring dashboard', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input)
       if (isAuthStatus(input)) {
-        return response({ setupRequired: false, authenticated: false, owner: null })
+        return response({
+          setupRequired: false,
+          authenticated: false,
+          owner: null,
+        })
       }
       if (url.endsWith('/csrf')) {
         csrfRequests += 1
