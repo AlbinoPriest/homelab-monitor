@@ -79,11 +79,21 @@ flowchart TD
     State --> Event["Publish post-commit SSE event"]
 ```
 
-Phase 2 uses a bounded scheduled worker pool (8 threads, queue capacity 92) and a JVM-local atomic in-flight set keyed by monitor UUID. Manual checks use a separate four-thread, zero-queue executor, so they start immediately or return `409` without waiting behind scheduled work. The coordinator claims a monitor before work enters either pool, so scheduled/manual collisions return or skip without overlapping network work. There is no permanent thread per monitor and no distributed lock because version 1 is single-instance.
+Scheduled checks use a bounded 50-thread worker pool with queue capacity 50, enough to process the documented
+100-monitor envelope within one minute even when every target consumes the 30-second timeout. Manual checks use
+a separate four-thread, zero-queue executor, so they start immediately or return `409` without waiting behind
+scheduled work. Their global start rate is bounded to ten per second and excess requests return `429`. The
+coordinator claims a monitor before work enters either pool, so scheduled/manual collisions return or skip without
+overlapping network work. There is no permanent thread per monitor and no distributed lock because version 1 is
+single-instance.
+
+Monitor intervals are bounded from one minute through 24 hours. At the version 1 target of roughly 100
+monitors, the minimum interval limits raw-check growth to 144,000 rows per day and keeps 30-day analytics
+queries within the documented single-instance capacity envelope.
 
 Network execution occurs outside a database transaction. It captures the monitor's optimistic version, then completion obtains a pessimistic row lock and accepts the result only when the row still exists, remains enabled, and has the same version. This serializes competing transitions and discards stale results after configuration changes, pause, or delete. Persisting the check, state counters, transition history, and next due time is one transaction.
 
-`next_check_at` is persisted. A restart loses only the ephemeral in-flight set; overdue enabled monitors are discovered again. Interval updates set the next check due immediately under the new configuration. Shutdown waits up to 35 seconds for workers, while monitor timeouts are bounded at 30 seconds.
+`next_check_at` is persisted. A restart loses only the ephemeral in-flight set; overdue enabled monitors are discovered again. Interval updates set the next check due immediately under the new configuration. Shutdown allows 65 seconds for the scheduled pool's two timeout-bound waves, while individual monitor timeouts are bounded at 30 seconds.
 
 ## State and availability semantics — required
 
@@ -141,7 +151,7 @@ The owner can intentionally monitor private network services. Therefore target f
 
 - Only the authenticated owner may configure or trigger monitors after setup.
 - HTTP accepts only absolute `http` and `https` URLs without user information or fragments, manually follows at most three redirects, revalidates each destination, closes response streams without retaining bodies, and enforces an overall timeout.
-- TCP validates host, port, and timeout and uses Java socket APIs directly. DNS resolution runs on a separate two-thread bounded pool and shares the check's end-to-end deadline, so a slow system resolver cannot consume the monitor worker pool indefinitely.
+- TCP validates host, port, and timeout and uses Java socket APIs directly. DNS resolution runs on a separate bounded pool sized for all scheduled and manual worker lanes and shares the check's end-to-end deadline, so a slow system resolver cannot consume the monitor worker pool indefinitely or reject a supported-capacity wave.
 - No target input reaches a shell.
 - API errors and logs omit secrets and internal exception details.
 - Session cookies, CSRF, CORS/same-origin behavior, Actuator exposure, and reverse-proxy headers are part of the
@@ -169,7 +179,11 @@ capabilities, `no-new-privileges`, PID/resource limits, and explicit graceful sh
 
 ## Data and migrations
 
-PostgreSQL is authoritative. Flyway is active from Phase 1 and performs incremental migrations; Hibernate validates rather than creates schema. State history provides authoritative transition intervals, checks provide observation and latency detail, and incidents preserve confirmed outage lifecycles. The Phase 5 migration backfills last-check timestamps and active incidents for existing offline monitors. Phase 6 analytics has PostgreSQL merge overlapping observation coverage and aggregate duration and latency percentiles for the requested 1h, 24h, 7d, or 30d window; raw check rows are never materialized in the application, and each service response exposes exactly 24 chart buckets. A scheduled cleanup removes a configured maximum number of bounded raw-check batches per run after their observation coverage ends (30 days by default); metrics mark a requested range partial and count the unavailable prefix as excluded when retention truncates it. Disabling cleanup also disables the analytics retention boundary. State and incident histories are retained because they remain authoritative domain records.
+PostgreSQL is authoritative. Flyway is active from Phase 1 and performs incremental migrations; Hibernate validates rather than creates schema. State history provides authoritative transition intervals, checks provide observation and latency detail, and incidents preserve confirmed outage lifecycles. The Phase 5 migration backfills last-check timestamps and active incidents for existing offline monitors. The Phase 10 migration raises legacy sub-minute monitor intervals to one minute and makes enabled rows immediately due so the new bound takes effect without losing checks.
+
+Phase 6 analytics has PostgreSQL merge overlapping observation coverage and aggregate duration and latency percentiles for the requested 1h, 24h, 7d, or 30d window; raw check rows are never materialized in the application, and each service response exposes exactly 24 chart buckets. Indexed lateral lookups select only one pre-window state per monitor, while a separate time index bounds in-window history work instead of scanning lifetime history. Each analytics response is calculated in one repeatable-read transaction so its totals, rankings, and buckets describe the same database snapshot.
+
+Raw-check cleanup runs on a dedicated scheduler and removes at most two 1,000-row batches each minute after their observation coverage ends (30 days by default). Its capacity of 2.88 million rows per day exceeds the maximum documented combined ingest of 144,000 scheduled plus 864,000 manual checks per day, while each transaction remains bounded. Metrics mark a requested range partial and count the unavailable prefix as excluded when retention truncates it. Disabling cleanup also disables the analytics retention boundary. State and incident histories are retained because they remain authoritative domain records.
 
 ## Real-time delivery
 
@@ -182,8 +196,11 @@ they are invalidation hints, not an alternate source of truth.
 The in-memory broker is intentionally single-instance and stores no replay history. It permits eight streams by
 default, sends a 15-second heartbeat, gives each connection a five-minute lifetime, and removes streams on
 completion, timeout, error, queue overflow, logout, session expiry, or shutdown. Each subscription has a bounded
-pending queue and one delivery lane on a dedicated bounded executor. A stalled browser therefore cannot block
-monitor completion, scheduling, freshness, heartbeats for healthy clients, or database transactions.
+pending queue and a virtual-thread delivery lane. Termination, eviction, callbacks, and shutdown never wait on a
+blocked client write. Cancellation interrupts the writer; if the transport
+still refuses to exit, that closed stream continues consuming one of the eight connection slots until it does. A
+stalled browser therefore cannot create unbounded retired tasks, exhaust a fixed worker pool, or block monitor
+completion, scheduling, freshness, healthy clients, or database transactions.
 
 The browser uses native EventSource reconnection. Since the server does not replay events, every connection open
 invalidates all mounted authoritative query families; live messages are coalesced briefly and invalidate only the

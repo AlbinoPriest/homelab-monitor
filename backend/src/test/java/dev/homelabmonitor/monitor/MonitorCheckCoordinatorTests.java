@@ -2,6 +2,7 @@ package dev.homelabmonitor.monitor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -137,6 +138,66 @@ class MonitorCheckCoordinatorTests {
 			when(persistence.manualSnapshot(id)).thenThrow(new MonitorNotFoundException(id));
 			assertThatThrownBy(() -> coordinator.executeNow(id)).isInstanceOf(MonitorNotFoundException.class);
 		}
+	}
+
+	@Test
+	void boundsGlobalManualCheckStartsPerSecond() {
+		MonitorExecutionPersistence persistence = mock(MonitorExecutionPersistence.class);
+		when(persistence.manualSnapshot(any(UUID.class))).thenAnswer(invocation -> new MonitorExecutionSnapshot(
+				invocation.getArgument(0), 0, MonitorType.TCP, "localhost", 80, 500, null, null,
+				MonitorStatus.UNKNOWN, 1, 1, 0, 0));
+		when(persistence.complete(any(MonitorExecutionSnapshot.class), any(ExecutionResult.class)))
+				.thenAnswer(invocation -> Optional.of(new MonitorCheckResponse(
+						UUID.randomUUID(), CheckResultType.SUCCESS, 1L, MonitorTestFixtures.NOW, null, null)));
+		MonitorExecutor executor = new MonitorExecutor() {
+			@Override
+			public MonitorType type() { return MonitorType.TCP; }
+
+			@Override
+			public ExecutionResult execute(MonitorExecutionSnapshot ignored) {
+				return ExecutionResult.success(1, MonitorTestFixtures.NOW, null);
+			}
+		};
+		MonitorCheckCoordinator coordinator = coordinator(persistence, List.of(executor), Runnable::run);
+
+		for (int attempt = 0; attempt < MonitorCheckCoordinator.MAX_MANUAL_CHECK_STARTS_PER_SECOND; attempt++) {
+			coordinator.executeNow(UUID.randomUUID());
+		}
+		assertThatThrownBy(() -> coordinator.executeNow(UUID.randomUUID()))
+				.isInstanceOf(ManualCheckThrottledException.class);
+	}
+
+	@Test
+	void failedSnapshotRequestsDoNotConsumeManualRateCapacity() {
+		UUID validId = UUID.randomUUID();
+		MonitorExecutionPersistence persistence = mock(MonitorExecutionPersistence.class);
+		MonitorExecutionSnapshot snapshot = new MonitorExecutionSnapshot(
+				validId, 0, MonitorType.TCP, "localhost", 80, 500, null, null,
+				MonitorStatus.UNKNOWN, 1, 1, 0, 0);
+		when(persistence.manualSnapshot(any(UUID.class))).thenAnswer(invocation -> {
+			UUID id = invocation.getArgument(0);
+			if (validId.equals(id)) return snapshot;
+			throw new MonitorNotFoundException(id);
+		});
+		MonitorCheckResponse response = new MonitorCheckResponse(
+				UUID.randomUUID(), CheckResultType.SUCCESS, 1L, MonitorTestFixtures.NOW, null, null);
+		when(persistence.complete(any(MonitorExecutionSnapshot.class), any(ExecutionResult.class)))
+				.thenReturn(Optional.of(response));
+		MonitorExecutor executor = new MonitorExecutor() {
+			@Override
+			public MonitorType type() { return MonitorType.TCP; }
+
+			@Override
+			public ExecutionResult execute(MonitorExecutionSnapshot ignored) {
+				return ExecutionResult.success(1, MonitorTestFixtures.NOW, null);
+			}
+		};
+		MonitorCheckCoordinator coordinator = coordinator(persistence, List.of(executor), Runnable::run);
+		for (int attempt = 0; attempt < MonitorCheckCoordinator.MAX_MANUAL_CHECK_STARTS_PER_SECOND; attempt++) {
+			assertThatThrownBy(() -> coordinator.executeNow(UUID.randomUUID()))
+					.isInstanceOf(MonitorNotFoundException.class);
+		}
+		assertThat(coordinator.executeNow(validId)).isEqualTo(response);
 	}
 
 	private MonitorCheckCoordinator coordinator(

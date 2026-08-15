@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Executor;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.LongFunction;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,29 +57,25 @@ class RealtimeBroker {
 		this.deliveryExecutor = deliveryExecutor;
 	}
 
-	synchronized SseEmitter subscribe(String sessionId) {
-		if (subscriptions.size() >= maxConnections) {
-			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-					"Realtime connection capacity is temporarily exhausted.");
-		}
+	SseEmitter subscribe(String sessionId) {
 		UUID subscriptionId = UUID.randomUUID();
 		SseEmitter emitter = emitterFactory.apply(connectionTimeoutMillis);
 		Subscription subscription = new Subscription(sessionId, emitter);
-		subscriptions.put(subscriptionId, subscription);
+		synchronized (this) {
+			if (subscriptions.size() >= maxConnections) {
+				throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+						"Realtime connection capacity is temporarily exhausted.");
+			}
+			subscriptions.put(subscriptionId, subscription);
+		}
 		emitter.onCompletion(() -> remove(subscriptionId));
 		emitter.onTimeout(() -> remove(subscriptionId));
 		emitter.onError(error -> remove(subscriptionId));
-		try {
-			emitter.send(SseEmitter.event()
-					.name("ready")
-					.reconnectTime(3_000)
-					.data(Map.of("connectedAt", clock.instant())));
-		} catch (IOException | RuntimeException exception) {
-			subscriptions.remove(subscriptionId);
-			emitter.completeWithError(exception);
-			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-					"Realtime connection could not be established.", exception);
-		}
+		QueueResult ready = subscription.enqueue(() -> SseEmitter.event()
+				.name("ready")
+				.reconnectTime(3_000)
+				.data(Map.of("connectedAt", clock.instant())));
+		if (ready == QueueResult.START_DRAIN) scheduleDrain(subscriptionId, subscription);
 		return emitter;
 	}
 
@@ -92,16 +89,15 @@ class RealtimeBroker {
 	}
 
 	void closeSession(String sessionId) {
-		List<Subscription> closing = new ArrayList<>();
+		List<Map.Entry<UUID, Subscription>> closing;
 		synchronized (this) {
-			subscriptions.entrySet().removeIf(entry -> {
-				if (!entry.getValue().sessionId().equals(sessionId)) return false;
-				closing.add(entry.getValue());
-				return true;
-			});
+			closing = subscriptions.entrySet().stream()
+					.filter(entry -> entry.getValue().sessionId().equals(sessionId))
+					.map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+					.toList();
 		}
-		closing.forEach(subscription -> {
-			subscription.terminate();
+		closing.forEach(entry -> {
+			if (entry.getValue().terminateWithoutWaiting()) remove(entry.getKey(), entry.getValue());
 		});
 	}
 
@@ -112,9 +108,7 @@ class RealtimeBroker {
 			closing = List.copyOf(subscriptions.values());
 			subscriptions.clear();
 		}
-		closing.forEach(subscription -> {
-			subscription.terminate();
-		});
+		closing.forEach(Subscription::terminateWithoutWaiting);
 	}
 
 	synchronized int connectionCount() {
@@ -131,12 +125,16 @@ class RealtimeBroker {
 			if (result == QueueResult.FULL) {
 				evict(entry.getKey(), entry.getValue(), new IOException("Realtime client is not consuming events."));
 			} else if (result == QueueResult.START_DRAIN) {
-				try {
-					deliveryExecutor.execute(() -> drain(entry.getKey(), entry.getValue()));
-				} catch (RuntimeException exception) {
-					evict(entry.getKey(), entry.getValue(), exception);
-				}
+				scheduleDrain(entry.getKey(), entry.getValue());
 			}
+		}
+	}
+
+	private void scheduleDrain(UUID subscriptionId, Subscription subscription) {
+		try {
+			deliveryExecutor.execute(() -> drain(subscriptionId, subscription));
+		} catch (RuntimeException exception) {
+			evict(subscriptionId, subscription, exception);
 		}
 	}
 
@@ -147,17 +145,31 @@ class RealtimeBroker {
 			}
 		} catch (IOException | RuntimeException exception) {
 			evict(subscriptionId, subscription, exception);
+		} finally {
+			if (subscription.isClosed()) {
+				subscription.finishTermination();
+				remove(subscriptionId, subscription);
+			}
 		}
 	}
 
 	private void evict(UUID subscriptionId, Subscription subscription, Throwable exception) {
-		if (!remove(subscriptionId, subscription)) return;
-		subscription.terminateWithError(exception);
+		if (!contains(subscriptionId, subscription)) return;
+		if (subscription.terminateWithErrorWithoutWaiting(exception)) remove(subscriptionId, subscription);
 	}
 
-	private synchronized void remove(UUID subscriptionId) {
-		Subscription removed = subscriptions.remove(subscriptionId);
-		if (removed != null) removed.markClosed();
+	private void remove(UUID subscriptionId) {
+		Subscription subscription;
+		synchronized (this) {
+			subscription = subscriptions.get(subscriptionId);
+		}
+		if (subscription != null && subscription.markClosedWithoutWaiting()) {
+			remove(subscriptionId, subscription);
+		}
+	}
+
+	private synchronized boolean contains(UUID subscriptionId, Subscription subscription) {
+		return subscriptions.get(subscriptionId) == subscription;
 	}
 
 	private synchronized boolean remove(UUID subscriptionId, Subscription subscription) {
@@ -170,8 +182,13 @@ class RealtimeBroker {
 		private final String sessionId;
 		private final SseEmitter emitter;
 		private final ArrayDeque<Supplier<SseEmitter.SseEventBuilder>> pending = new ArrayDeque<>();
+		private final ReentrantLock deliveryLock = new ReentrantLock();
 		private boolean draining;
 		private volatile boolean closed;
+		private volatile Thread deliveryThread;
+		private boolean completionRequested;
+		private boolean emitterCompleted;
+		private Throwable terminalError;
 
 		private Subscription(String sessionId, SseEmitter emitter) {
 			this.sessionId = sessionId;
@@ -187,39 +204,105 @@ class RealtimeBroker {
 			return QueueResult.START_DRAIN;
 		}
 
-		synchronized boolean sendNext() throws IOException {
-			if (closed) return false;
-			Supplier<SseEmitter.SseEventBuilder> event = pending.pollFirst();
-			if (event == null) {
-				draining = false;
-				return false;
+		boolean sendNext() throws IOException {
+			Supplier<SseEmitter.SseEventBuilder> event;
+			synchronized (this) {
+				if (closed) return false;
+				event = pending.pollFirst();
+				if (event == null) {
+					draining = false;
+					return false;
+				}
 			}
-			emitter.send(event.get());
-			return true;
+			deliveryLock.lock();
+			try {
+				deliveryThread = Thread.currentThread();
+				if (closed) return false;
+				emitter.send(event.get());
+				return !closed;
+			} finally {
+				deliveryThread = null;
+				deliveryLock.unlock();
+			}
 		}
 
-		void terminate() {
+		boolean terminateWithoutWaiting() {
+			requestTermination(null);
+			return completeIfQuiescent();
+		}
+
+		boolean terminateWithErrorWithoutWaiting(Throwable exception) {
+			requestTermination(exception);
+			return completeIfQuiescent();
+		}
+
+		boolean markClosedWithoutWaiting() {
+			interruptDelivery();
+			return isQuiescent();
+		}
+
+		private void interruptDelivery() {
+			Thread writer = closeState();
+			if (writer != null) writer.interrupt();
+		}
+
+		private void requestTermination(Throwable exception) {
+			Thread writer;
+			synchronized (this) {
+				if (!completionRequested) terminalError = exception;
+				completionRequested = true;
+				writer = closeState();
+			}
+			if (writer != null) writer.interrupt();
+		}
+
+		private synchronized Thread closeState() {
 			closed = true;
-			emitter.complete();
-			awaitQuiescence();
-		}
-
-		void terminateWithError(Throwable exception) {
-			closed = true;
-			emitter.completeWithError(exception);
-			awaitQuiescence();
-		}
-
-		void markClosed() {
-			closed = true;
-			awaitQuiescence();
-		}
-
-		private synchronized void awaitQuiescence() {
 			pending.clear();
 			draining = false;
+			return deliveryThread;
 		}
 
+		private boolean isQuiescent() {
+			if (!deliveryLock.tryLock()) return false;
+			try {
+				return deliveryThread == null;
+			} finally {
+				deliveryLock.unlock();
+			}
+		}
+
+		private boolean completeIfQuiescent() {
+			if (!deliveryLock.tryLock()) return false;
+			try {
+				completeEmitter();
+				return deliveryThread == null;
+			} finally {
+				deliveryLock.unlock();
+			}
+		}
+
+		void finishTermination() {
+			deliveryLock.lock();
+			try {
+				completeEmitter();
+			} finally {
+				deliveryLock.unlock();
+			}
+		}
+
+		private void completeEmitter() {
+			Throwable error;
+			synchronized (this) {
+				if (!completionRequested || emitterCompleted) return;
+				emitterCompleted = true;
+				error = terminalError;
+			}
+			if (error == null) emitter.complete();
+			else emitter.completeWithError(error);
+		}
+
+		boolean isClosed() { return closed; }
 		String sessionId() { return sessionId; }
 		SseEmitter emitter() { return emitter; }
 	}

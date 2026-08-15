@@ -1,16 +1,17 @@
 package dev.homelabmonitor.common.web;
 
 import dev.homelabmonitor.analytics.InvalidAnalyticsRequestException;
-import dev.homelabmonitor.monitor.InvalidMonitorException;
 import dev.homelabmonitor.auth.InvalidAuthRequestException;
 import dev.homelabmonitor.auth.InvalidCredentialsException;
 import dev.homelabmonitor.auth.LoginThrottledException;
 import dev.homelabmonitor.auth.SetupUnavailableException;
+import dev.homelabmonitor.monitor.InvalidMonitorException;
+import dev.homelabmonitor.monitor.ManualCheckThrottledException;
 import dev.homelabmonitor.monitor.MonitorBusyException;
 import dev.homelabmonitor.monitor.MonitorNotFoundException;
+import jakarta.validation.ConstraintViolationException;
 import java.net.URI;
 import java.util.List;
-import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -52,6 +53,13 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(MonitorBusyException.class)
 	ProblemDetail conflict(MonitorBusyException exception) {
 		return problem(HttpStatus.CONFLICT, "Monitor check already running", exception.getMessage());
+	}
+
+	@ExceptionHandler(ManualCheckThrottledException.class)
+	ResponseEntity<ProblemDetail> manualCheckThrottled(ManualCheckThrottledException exception) {
+		ProblemDetail detail = problem(HttpStatus.TOO_MANY_REQUESTS, "Manual checks temporarily limited",
+				exception.getMessage());
+		return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).header("Retry-After", "1").body(detail);
 	}
 
 	@ExceptionHandler(InvalidMonitorException.class)

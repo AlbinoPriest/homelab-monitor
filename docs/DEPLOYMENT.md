@@ -77,7 +77,7 @@ volume to repair an established deployment; rotate the roles interactively as de
 ## Production configuration
 
 Compose reads `.env` from the repository root. The two database role names and their required passwords must
-be different; neither password has a production default. PostgreSQL's initialization role is reserved for
+be different and each password must contain at least 20 characters; neither password has a production default. PostgreSQL's initialization role is reserved for
 administration; the backend and Flyway connect as the non-superuser application role created during first
 database initialization.
 
@@ -85,18 +85,18 @@ database initialization.
 | --- | --- | --- |
 | `POSTGRES_DB` | `homelab_monitor` | Database name |
 | `POSTGRES_ADMIN_USER` | `homelab_admin` | PostgreSQL initialization/backup role; never supplied to the backend |
-| `POSTGRES_ADMIN_PASSWORD` | required | Long random password for the PostgreSQL administration role |
+| `POSTGRES_ADMIN_PASSWORD` | required | Random password of at least 20 characters for the PostgreSQL administration role |
 | `APP_DB_USER` | `homelab_app` | Non-superuser role used by the backend and Flyway |
-| `APP_DB_PASSWORD` | required | Different long random password for the application role |
+| `APP_DB_PASSWORD` | required | Different random password of at least 20 characters for the application role |
 | `APP_BIND_ADDRESS` | `127.0.0.1` | Address on which the frontend proxy publishes |
 | `APP_PORT` | `8080` | Host port used by the TLS terminator |
 | `SESSION_TIMEOUT` | `30m` | Owner-session inactivity timeout |
 | `RAW_CHECK_RETENTION_ENABLED` | `true` | Enables bounded raw-check cleanup |
 | `RAW_CHECK_RETENTION_DAYS` | `30` | Retained raw-check history |
 | `RAW_CHECK_RETENTION_BATCH_SIZE` | `1000` | Rows removed per cleanup batch |
-| `RAW_CHECK_RETENTION_MAX_BATCHES_PER_RUN` | `10` | Maximum cleanup batches per scheduled run |
+| `RAW_CHECK_RETENTION_MAX_BATCHES_PER_RUN` | `2` | Maximum cleanup batches per scheduled run |
 | `RAW_CHECK_RETENTION_INITIAL_DELAY` | `60000` | Cleanup startup delay in milliseconds |
-| `RAW_CHECK_RETENTION_CLEANUP_DELAY` | `86400000` | Delay between cleanup runs in milliseconds |
+| `RAW_CHECK_RETENTION_CLEANUP_DELAY` | `60000` | Delay between cleanup runs in milliseconds |
 | `SSE_MAX_CONNECTIONS` | `8` | Concurrent authenticated event streams |
 | `SSE_CONNECTION_TIMEOUT` | `300000` | Event-stream lifetime in milliseconds |
 | `SSE_HEARTBEAT_DELAY` | `15000` | Event-stream heartbeat interval in milliseconds |
@@ -121,7 +121,7 @@ superuser, role-creation, or database-creation privileges.
 
 ## Health, resources, and shutdown
 
-- Frontend health: internal `/healthz`; externally use `/actuator/health` to verify the complete proxy path.
+- Frontend health: proxied `/actuator/health`, verifying the complete frontend-to-backend path.
 - Backend health: `/actuator/health`, with details hidden and no other Actuator endpoints exposed.
 - PostgreSQL health: `pg_isready` against the configured database and role.
 - Startup is ordered by health: PostgreSQL, backend/Flyway, then frontend.
@@ -130,7 +130,8 @@ superuser, role-creation, or database-creation privileges.
   set; tune only after observing the host, and preserve bounded application worker pools.
 - Frontend and backend run as non-root with read-only root filesystems, dropped Linux capabilities,
   `no-new-privileges`, and small tmpfs mounts. PostgreSQL retains only its named data volume.
-- Backend receives 45 seconds and PostgreSQL 60 seconds for graceful stop.
+- Backend receives 80 seconds and PostgreSQL 60 seconds for graceful stop; the backend's Spring lifecycle budget
+  is 70 seconds so its supported two-wave scheduled-check envelope can finish first.
 
 Useful inspection commands:
 

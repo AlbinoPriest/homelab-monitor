@@ -66,7 +66,7 @@ class MonitorExecutionPersistence {
 			return Optional.empty();
 		}
 
-		expirePriorObservation(monitor, result.checkedAt());
+		boolean freshnessChangedStatus = expirePriorObservation(monitor, result.checkedAt());
 		MonitorStatus previous = monitor.status();
 		StateTransition transition = stateEngine.apply(monitor, result);
 		java.time.Instant validUntil = freshness.validUntil(monitor, result.checkedAt());
@@ -82,6 +82,10 @@ class MonitorExecutionPersistence {
 			incidentService.resolve(monitor.id(), IncidentResolutionReason.RECOVERED, result.checkedAt());
 		}
 		EnumSet<MonitorChange> changes = EnumSet.of(MonitorChange.CHECK_COMPLETED);
+		if (freshnessChangedStatus) {
+			changes.add(MonitorChange.FRESHNESS_EXPIRED);
+			changes.add(MonitorChange.STATUS_CHANGED);
+		}
 		if (transition.status() != previous) changes.add(MonitorChange.STATUS_CHANGED);
 		if (previous != MonitorStatus.OFFLINE && transition.status() == MonitorStatus.OFFLINE) {
 			changes.add(MonitorChange.INCIDENT_OPENED);
@@ -93,14 +97,16 @@ class MonitorExecutionPersistence {
 		return Optional.of(MonitorCheckResponse.from(check));
 	}
 
-	private void expirePriorObservation(Monitor monitor, java.time.Instant checkedAt) {
-		if (!freshness.isStale(monitor, checkedAt)) return;
+	private boolean expirePriorObservation(Monitor monitor, java.time.Instant checkedAt) {
+		if (!freshness.isStale(monitor, checkedAt)) return false;
 		MonitorStatus previous = monitor.status();
 		java.time.Instant expiredAt = freshness.expiresAt(monitor);
 		monitor.expireEvidence(expiredAt);
 		if (previous == MonitorStatus.ONLINE || previous == MonitorStatus.DEGRADED) {
 			historyRepository.save(MonitorStateHistory.create(
 					monitor, previous, MonitorStatus.UNKNOWN, expiredAt, StateChangeReason.OBSERVATION_STALE));
+			return true;
 		}
+		return false;
 	}
 }

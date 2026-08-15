@@ -138,22 +138,6 @@ a {
   color: #baf1e7;
   background: #152523;
 }
-.sidebar-foot {
-  margin-top: auto;
-  padding: 0.85rem 0.5rem;
-  color: #647372;
-  font-size: 0.73rem;
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-}
-.system-pulse {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--teal);
-  box-shadow: 0 0 0 0.25rem rgb(104 213 193/10%);
-}
 .main-column {
   min-width: 0;
 }
@@ -1299,8 +1283,7 @@ a {
     border: 0;
     border-top: 1px solid #263234;
   }
-  .sidebar > .brand,
-  .sidebar-foot {
+  .sidebar > .brand {
     display: none;
   }
   .sidebar nav {

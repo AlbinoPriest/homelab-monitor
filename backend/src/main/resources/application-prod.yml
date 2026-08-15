@@ -8,7 +8,7 @@ server:
 
 spring:
   lifecycle:
-    timeout-per-shutdown-phase: 40s
+    timeout-per-shutdown-phase: 70s
 
 homelab-monitor:
   security:

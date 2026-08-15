@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -35,7 +36,7 @@ class AnalyticsService {
 		this.retentionEnabled = retentionEnabled;
 	}
 
-	@Transactional(readOnly = true)
+	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 	MonitorMetricsResponse monitor(UUID id, String requestedWindow) {
 		MetricWindow window = MetricWindow.parse(requestedWindow);
 		Instant end = clock.instant();
@@ -54,7 +55,7 @@ class AnalyticsService {
 				repository.buckets(id, dataStart, calculationStart, end, BUCKET_COUNT));
 	}
 
-	@Transactional(readOnly = true)
+	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 	AnalyticsResponse overview(String requestedWindow) {
 		MetricWindow window = MetricWindow.parse(requestedWindow);
 		Instant end = clock.instant();

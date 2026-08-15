@@ -16,7 +16,7 @@ This document is the durable source of product requirements and delivery status.
 | 7 | Authenticated Server-Sent Events | Complete (verification and backend/frontend/QA review gates passed) |
 | 8 | Production Docker and security/deployment hardening | Complete (verification, production smoke/restore, and security/DevOps review gates passed) |
 | 9 | UI, accessibility, README, ADR, changelog, and screenshot polish | Complete (verification and frontend/repository review gates passed) |
-| 10 | Independent final audit and stable release | Not started |
+| 10 | Independent final audit and stable release | Complete (full verification, production smoke/restore, image and dependency scans, and all review gates passed) |
 
 Update this table at each checkpoint. A phase is not complete until behavior, verification, review, fixes, documentation, and coherent commits are complete.
 
@@ -199,6 +199,7 @@ Multi-user/RBAC, ICMP, SNMP, Proxmox, Home Assistant, Docker Engine, Tailscale, 
 
 ## Next checkpoint
 
-Begin Phase 10 from the verified Phase 9 presentation checkpoint. Run the independent final audit, full
-verification, production smoke and deployment inspection, secret/dead-file scan, release-readiness review, and
-only create a stable tag if the resulting evidence justifies it.
+The version 1.0.0 release candidate is merge-ready after the independent final audit, full verification,
+production smoke and restore exercise, hardened-container inspection, dependency and image scans, and all
+review gates passed. Merge the release pull request before creating the annotated `v1.0.0` tag; do not add
+roadmap features to the release branch.

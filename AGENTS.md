@@ -61,7 +61,6 @@ Never report a check as passing when it did not run.
 
 ## Current checkpoint
 
-Phase 9 establishes the responsive presentation pass, complete service inventory filters, accessibility
-semantics, genuine screenshots, public README, observation-validity ADR, and safer production quick start. After
-its verified commit, Phase 10 is next: run the independent final audit and release-readiness gate without adding
-roadmap features.
+Phase 10 completes the version 1.0.0 release candidate with full verification, independent review, production
+smoke and restore evidence, hardened-container inspection, and dependency/image scans. After the verified release
+commit is merged, create the annotated `v1.0.0` tag. Do not add roadmap features to the release branch.
