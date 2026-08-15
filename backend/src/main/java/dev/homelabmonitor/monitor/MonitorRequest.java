@@ -13,10 +13,12 @@ public record MonitorRequest(
 		@NotBlank @Size(max = 2048) String target,
 		@Min(1) @Max(65535) Integer port,
 		boolean enabled,
-		@Min(5) @Max(86400) int intervalSeconds,
-		@Min(100) @Max(30000) int timeoutMillis,
+		@Min(MIN_INTERVAL_SECONDS) @Max(86400) int intervalSeconds,
+		@Min(100) @Max(MAX_TIMEOUT_MILLIS) int timeoutMillis,
 		@Min(1) @Max(100) int failureThreshold,
 		@Min(1) @Max(100) int recoveryThreshold,
 		@Min(1) @Max(30000) Integer latencyWarningMillis,
 		@Min(100) @Max(599) Integer expectedHttpStatus) {
+	static final int MIN_INTERVAL_SECONDS = 60;
+	static final int MAX_TIMEOUT_MILLIS = 30_000;
 }

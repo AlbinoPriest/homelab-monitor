@@ -54,7 +54,7 @@ class HttpMonitorExecutor implements MonitorExecutor {
 				HttpRequest request = HttpRequest.newBuilder(current)
 						.timeout(Duration.ofNanos(remainingNanos))
 						.header("Accept", "*/*")
-						.header("User-Agent", "HomeLab-Monitor/0.0.1")
+						.header("User-Agent", "HomeLab-Monitor/1.0.0")
 						.GET()
 						.build();
 				HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());

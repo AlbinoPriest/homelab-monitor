@@ -1,6 +1,7 @@
 package dev.homelabmonitor;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -39,6 +40,7 @@ class IncidentMigrationTests {
 			flyway.migrate();
 			JdbcTemplate jdbc = new JdbcTemplate(dataSource);
 			UUID monitorId = UUID.randomUUID();
+			UUID fastMonitorId = UUID.randomUUID();
 			Instant startedAt = Instant.parse("2026-01-01T00:00:00Z");
 			Instant laterFailure = startedAt.plusSeconds(120);
 			jdbc.update("""
@@ -58,6 +60,15 @@ class IncidentMigrationTests {
 					""".formatted(schema), UUID.randomUUID(), monitorId, timestamp(startedAt));
 			insertCheck(jdbc, schema, monitorId, "SUCCESS", startedAt.plusSeconds(60));
 			insertCheck(jdbc, schema, monitorId, "DNS_FAILURE", laterFailure);
+			jdbc.update("""
+					INSERT INTO %s.monitors (
+					  id, name, type, target, port, enabled, status, interval_seconds, timeout_millis,
+					  failure_threshold, recovery_threshold, consecutive_failures, consecutive_successes,
+					  next_check_at, created_at, updated_at, version)
+					VALUES (?, 'legacy-fast', 'TCP', '127.0.0.1', 9, TRUE, 'UNKNOWN', 5, 1000,
+					  1, 1, 0, 0, ?, ?, ?, 0)
+					""".formatted(schema), fastMonitorId, timestamp(Instant.parse("2099-01-01T00:00:00Z")),
+					timestamp(startedAt), timestamp(startedAt));
 
 			Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
 					.locations("classpath:db/migration").load().migrate();
@@ -78,6 +89,17 @@ class IncidentMigrationTests {
 							+ ".monitor_checks WHERE monitor_id = ? ORDER BY checked_at LIMIT 1",
 					(rs, rowNum) -> rs.getTimestamp(1).toInstant(), monitorId);
 			assertThat(migratedValidity).isEqualTo(startedAt);
+			Integer migratedInterval = jdbc.queryForObject(
+					"SELECT interval_seconds FROM " + schema + ".monitors WHERE id = ?",
+					Integer.class, fastMonitorId);
+			Instant migratedDue = jdbc.queryForObject(
+					"SELECT next_check_at FROM " + schema + ".monitors WHERE id = ?",
+					(rs, rowNum) -> rs.getTimestamp(1).toInstant(), fastMonitorId);
+			assertThat(migratedInterval).isEqualTo(60);
+			assertThat(migratedDue).isBefore(Instant.parse("2099-01-01T00:00:00Z"));
+			assertThatThrownBy(() -> jdbc.update(
+					"UPDATE " + schema + ".monitors SET interval_seconds = 59 WHERE id = ?", fastMonitorId))
+					.isInstanceOf(RuntimeException.class);
 		} finally {
 			flyway.clean();
 		}

@@ -27,9 +27,15 @@ The development profile also imports the repository-root `.env`, keeping its dat
 
 ## Monitoring API
 
-Phase 2 provides versioned endpoints under `/api/v1/monitors` for CRUD, manual checks, paginated check history, and paginated state history. Mutating requests require a CSRF token. Authentication is added in Phase 4, so the current development API must not be exposed to untrusted networks.
+The versioned `/api/v1` surface provides owner setup/session authentication, monitor CRUD and execution,
+paginated checks/state history/incidents, duration-based analytics, and authenticated realtime invalidation
+events. Every application route requires the singleton owner except the explicit setup, login, auth-status, CSRF,
+and health bootstrap routes. Mutations require a session-bound CSRF token.
 
 Monitor execution supports HTTP/HTTPS URLs and TCP host/port targets. Private network targets are intentionally allowed. Checks use bounded timeouts and safe structured results; response bodies are never stored.
+
+See [`docs/API.md`](../docs/API.md), [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md), and
+[`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) for the current contracts and production trust boundary.
 
 ## Verify
 

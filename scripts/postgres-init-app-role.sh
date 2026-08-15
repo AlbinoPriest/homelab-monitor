@@ -13,6 +13,11 @@ case "$POSTGRES_PASSWORD:$APP_DB_PASSWORD" in
     ;;
 esac
 
+if [ "${#POSTGRES_PASSWORD}" -lt 20 ] || [ "${#APP_DB_PASSWORD}" -lt 20 ]; then
+  echo "Database passwords must each contain at least 20 characters" >&2
+  exit 1
+fi
+
 if [ "$APP_DB_PASSWORD" = "$POSTGRES_PASSWORD" ]; then
   echo "The application and administration database passwords must be different" >&2
   exit 1

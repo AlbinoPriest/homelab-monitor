@@ -53,7 +53,8 @@ class MonitorExecutionPersistenceTests {
 		ArgumentCaptor<MonitorChangedEvent> published = ArgumentCaptor.forClass(MonitorChangedEvent.class);
 		verify(events).publishEvent(published.capture());
 		assertThat(published.getValue().changes())
-				.containsExactlyInAnyOrder(MonitorChange.CHECK_COMPLETED, MonitorChange.STATUS_CHANGED);
+				.containsExactlyInAnyOrder(MonitorChange.CHECK_COMPLETED, MonitorChange.FRESHNESS_EXPIRED,
+						MonitorChange.STATUS_CHANGED);
 		assertThat(published.getValue().monitorId()).isEqualTo(monitor.id());
 	}
 }

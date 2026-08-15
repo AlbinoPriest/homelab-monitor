@@ -261,7 +261,7 @@ export function MonitorForm({ monitor, busy, error, onCancel, onSubmit }: FormPr
               Interval (sec)
               <input
                 required
-                min={5}
+                min={60}
                 max={86400}
                 type="number"
                 value={form.intervalSeconds}

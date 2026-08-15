@@ -8,7 +8,8 @@ Include the affected version or commit, impact, reproduction steps, and any sugg
 
 ## Supported versions
 
-HomeLab Monitor has not released a supported application version yet. This policy will be updated before the first working release.
+The latest `1.0.x` release receives security fixes. Older minor or pre-release builds are unsupported; operators
+should upgrade after reviewing the migration and backup guidance in `docs/DEPLOYMENT.md`.
 
 ## Security model
 

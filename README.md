@@ -97,7 +97,7 @@ All screenshots use fictional services in an isolated local deployment.
 ## Development and verification
 
 Development runs PostgreSQL in Docker while the backend and Vite frontend run locally. Follow the Windows or
-POSIX instructions in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#development-on-windows), then run the relevant
+POSIX instructions in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), then run the relevant
 checks:
 
 ```bash

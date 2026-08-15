@@ -16,12 +16,17 @@ import org.springframework.stereotype.Repository;
 @Repository
 class AnalyticsReadRepository {
 	private static final String DURATION_CTES = """
-			WITH ranked_initial AS (
-			  SELECT id, monitor_id, to_status, effective_at,
-			         ROW_NUMBER() OVER (PARTITION BY monitor_id ORDER BY effective_at DESC, id DESC) AS position
-			  FROM monitor_state_history WHERE effective_at <= ?
+			WITH initial_events AS (
+			  SELECT initial.id, initial.monitor_id, initial.to_status, initial.effective_at
+			  FROM monitors monitor
+			  CROSS JOIN LATERAL (
+			    SELECT history.id, history.monitor_id, history.to_status, history.effective_at
+			    FROM monitor_state_history history
+			    WHERE history.monitor_id = monitor.id AND history.effective_at <= ?
+			    ORDER BY history.effective_at DESC, history.id DESC LIMIT 1
+			  ) initial
 			), events AS (
-			  SELECT id, monitor_id, to_status, effective_at FROM ranked_initial WHERE position = 1
+			  SELECT id, monitor_id, to_status, effective_at FROM initial_events
 			  UNION ALL
 			  SELECT id, monitor_id, to_status, effective_at FROM monitor_state_history
 			  WHERE effective_at > ? AND effective_at < ?
@@ -62,8 +67,8 @@ class AnalyticsReadRepository {
 			)
 			""";
 	private static final String MONITOR_DURATION_CTES = DURATION_CTES
-			.replace("FROM monitor_state_history WHERE effective_at <= ?",
-					"FROM monitor_state_history WHERE monitor_id = ? AND effective_at <= ?")
+			.replace("WHERE history.monitor_id = monitor.id AND history.effective_at <= ?",
+					"WHERE history.monitor_id = monitor.id AND monitor.id = ? AND history.effective_at <= ?")
 			.replace("WHERE effective_at > ? AND effective_at < ?",
 					"WHERE monitor_id = ? AND effective_at > ? AND effective_at < ?")
 			.replace("WHERE checked_at < ? AND observation_valid_until > ?",

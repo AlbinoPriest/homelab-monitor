@@ -10,7 +10,7 @@
 	</parent>
 	<groupId>dev.homelabmonitor</groupId>
 	<artifactId>homelab-monitor</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>1.0.0</version>
 	<name>HomeLab Monitor</name>
 	<description>Self-hosted monitoring for home-lab services</description>
 	<licenses>
@@ -21,6 +21,7 @@
 	</licenses>
 	<properties>
 		<java.version>21</java.version>
+		<postgresql.version>42.7.12</postgresql.version>
 		<springdoc.version>3.0.3</springdoc.version>
 	</properties>
 	<dependencies>

@@ -1,8 +1,10 @@
 # Changelog
 
-All notable changes will be documented in this file. The project has not published a working application release yet.
+All notable changes to HomeLab Monitor are documented in this file.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-08-15
 
 ### Added
 
@@ -23,6 +25,8 @@ All notable changes will be documented in this file. The project has not publish
 - An unprivileged same-origin Nginx proxy with SSE and browser security hardening.
 - Production smoke testing plus backup, restore, update, rollback, and secret-lifecycle guidance.
 - Genuine dashboard, service-detail, incident, analytics, and mobile screenshots plus an observation-validity ADR.
+- A release migration that upgrades legacy sub-minute schedules to the supported one-minute minimum and adds a
+  covering index for reachable-check latency analytics.
 
 ### Changed
 
@@ -30,6 +34,11 @@ All notable changes will be documented in this file. The project has not publish
 - Added skip navigation, announced loading state, selected-state semantics, balanced dashboard metrics, and a
   responsive two-column mobile filter layout.
 - Reworked the README into a concise product, architecture, deployment, verification, security, and scope guide.
+- Bounded raw-check cleanup capacity above the maximum combined scheduled/manual ingest rate on an isolated scheduler.
+- Made multi-query analytics responses use a repeatable-read snapshot and hardened SSE delivery against stalled clients.
+- Sized the scheduled worker pool for 100 timeout-bound one-minute monitors, bounded manual starts to ten per
+  second, and made state-history analytics use window-bounded indexed lookups.
+- Promoted backend, frontend, and monitor User-Agent metadata to version 1.0.0.
 
 ### Security
 
@@ -37,3 +46,5 @@ All notable changes will be documented in this file. The project has not publish
   non-root containers, read-only application filesystems, an explicit trusted-proxy boundary, source-restricted
   first-owner bootstrap guidance, separate PostgreSQL administrator/non-superuser application roles, and
   fail-closed rejection of unchanged production password placeholders.
+- Pinned GitHub Actions and production image digests, refreshed PostgreSQL, Nginx, Temurin, and pgJDBC, verified the
+  Maven distribution checksum, required 20-character production database passwords, and added CI restore testing.

@@ -1,6 +1,8 @@
 package dev.homelabmonitor.monitor;
 
 import java.time.Clock;
+import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
@@ -21,6 +23,7 @@ import org.springframework.stereotype.Service;
 class MonitorCheckCoordinator {
 
 	private static final Logger log = LoggerFactory.getLogger(MonitorCheckCoordinator.class);
+	static final int MAX_MANUAL_CHECK_STARTS_PER_SECOND = 10;
 	private final MonitorExecutionPersistence persistence;
 	private final Map<MonitorType, MonitorExecutor> executors;
 	private final Executor taskExecutor;
@@ -29,7 +32,8 @@ class MonitorCheckCoordinator {
 	private final Object stateLock = new Object();
 	private final Set<UUID> queued = new HashSet<>();
 	private final Set<UUID> inFlight = new HashSet<>();
-	private final Semaphore manualSlots = new Semaphore(4);
+	private final ArrayDeque<Instant> manualStarts = new ArrayDeque<>();
+	private final Semaphore manualSlots = new Semaphore(MonitorWorkerConfiguration.MANUAL_WORKERS);
 
 	MonitorCheckCoordinator(
 			MonitorExecutionPersistence persistence,
@@ -49,15 +53,23 @@ class MonitorCheckCoordinator {
 		if (!manualSlots.tryAcquire()) {
 			throw new MonitorBusyException(id);
 		}
-		if (!claimManual(id)) {
+		Instant manualStart;
+		try {
+			manualStart = claimManual(id);
+		} catch (RuntimeException exception) {
 			manualSlots.release();
-			throw new MonitorBusyException(id);
+			throw exception;
+		}
+		if (manualStart == null) {
+			manualSlots.release();
+			throw new ManualCheckThrottledException();
 		}
 		MonitorExecutionSnapshot snapshot;
 		try {
 			snapshot = persistence.manualSnapshot(id);
 		} catch (RuntimeException exception) {
 			releaseRunning(id);
+			rollbackManualStart(manualStart);
 			manualSlots.release();
 			throw exception;
 		}
@@ -80,6 +92,7 @@ class MonitorCheckCoordinator {
 			throw new InvalidMonitorException("Monitor check failed safely.");
 		} catch (TaskRejectedException exception) {
 			releaseRunning(id);
+			rollbackManualStart(manualStart);
 			manualSlots.release();
 			throw new MonitorBusyException(id);
 		}
@@ -107,6 +120,12 @@ class MonitorCheckCoordinator {
 
 	void releaseFreshnessClaim(UUID id) { releaseRunning(id); }
 
+	void resetManualRateLimit() {
+		synchronized (stateLock) {
+			manualStarts.clear();
+		}
+	}
+
 	private void executeScheduled(UUID id) {
 		if (!startScheduled(id)) return;
 		try {
@@ -118,9 +137,24 @@ class MonitorCheckCoordinator {
 		}
 	}
 
-	private boolean claimManual(UUID id) {
+	private Instant claimManual(UUID id) {
 		synchronized (stateLock) {
-			return !queued.contains(id) && inFlight.add(id);
+			if (queued.contains(id) || inFlight.contains(id)) throw new MonitorBusyException(id);
+			Instant now = clock.instant();
+			Instant cutoff = now.minusSeconds(1);
+			while (!manualStarts.isEmpty() && !manualStarts.peekFirst().isAfter(cutoff)) {
+				manualStarts.removeFirst();
+			}
+			if (manualStarts.size() >= MAX_MANUAL_CHECK_STARTS_PER_SECOND) return null;
+			inFlight.add(id);
+			manualStarts.addLast(now);
+			return now;
+		}
+	}
+
+	private void rollbackManualStart(Instant manualStart) {
+		synchronized (stateLock) {
+			manualStarts.removeLastOccurrence(manualStart);
 		}
 	}
 

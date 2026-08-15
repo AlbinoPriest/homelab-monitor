@@ -2,6 +2,7 @@ package dev.homelabmonitor.auth;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -90,7 +91,11 @@ class AuthController {
 	}
 
 	private void persist(Authentication authentication, HttpServletRequest request, HttpServletResponse response) {
-		if (request.getSession(false) != null) request.changeSessionId();
+		HttpSession existingSession = request.getSession(false);
+		if (existingSession != null) {
+			eventPublisher.publishEvent(new OwnerSessionEndedEvent(existingSession.getId()));
+			request.changeSessionId();
+		}
 		OwnerPrincipal owner = ((OwnerPrincipal) authentication.getPrincipal()).withoutPassword();
 		Authentication sessionAuthentication = UsernamePasswordAuthenticationToken.authenticated(
 				owner, null, authentication.getAuthorities());

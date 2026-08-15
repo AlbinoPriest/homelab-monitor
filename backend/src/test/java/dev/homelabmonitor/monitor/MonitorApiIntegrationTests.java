@@ -62,6 +62,7 @@ class MonitorApiIntegrationTests {
 	@BeforeEach
 	void clearMonitors() {
 		monitorRepository.deleteAll();
+		coordinator.resetManualRateLimit();
 	}
 
 	@Test
@@ -176,6 +177,17 @@ class MonitorApiIntegrationTests {
 		UUID id = createMonitor(httpRequest(false, "http://127.0.0.1", 1));
 		mockMvc.perform(get("/api/v1/monitors/{id}/checks", id).param("size", "101"))
 				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void rejectsIntervalsBelowTheSupportedAnalyticsCapacity() throws Exception {
+		String tooFrequent = httpRequest(true, "http://127.0.0.1", 1)
+				.replace("\"intervalSeconds\":60", "\"intervalSeconds\":59");
+
+		mockMvc.perform(post("/api/v1/monitors").with(csrf())
+					.contentType(MediaType.APPLICATION_JSON).content(tooFrequent))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.title").value("Validation failed"));
 	}
 
 	@Test

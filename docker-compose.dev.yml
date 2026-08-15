@@ -2,7 +2,7 @@ name: homelab-monitor-dev
 
 services:
   postgres:
-    image: postgres:17.10-alpine
+    image: postgres:17.11-alpine@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-homelab_monitor}
       POSTGRES_USER: ${POSTGRES_USER:-homelab_monitor}

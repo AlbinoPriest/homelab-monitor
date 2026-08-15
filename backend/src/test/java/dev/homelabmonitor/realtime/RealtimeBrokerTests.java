@@ -2,6 +2,7 @@ package dev.homelabmonitor.realtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
@@ -108,15 +109,20 @@ class RealtimeBrokerTests {
 	}
 
 	@Test
-	void sessionClosureWaitsForAnInflightSendAndPreventsLaterWrites() throws Exception {
+	void sessionClosureInterruptsAnInflightSendAndPreventsLaterWrites() throws Exception {
 		SseEmitter emitter = mock(SseEmitter.class);
 		CountDownLatch sendStarted = new CountDownLatch(1);
 		CountDownLatch releaseSend = new CountDownLatch(1);
 		CountDownLatch sendFinished = new CountDownLatch(1);
 		doNothing().doAnswer(invocation -> {
 			sendStarted.countDown();
-			releaseSend.await(2, TimeUnit.SECONDS);
-			sendFinished.countDown();
+			try {
+				releaseSend.await(2, TimeUnit.SECONDS);
+			} catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+			} finally {
+				sendFinished.countDown();
+			}
 			return null;
 		}).when(emitter).send(any(SseEmitter.SseEventBuilder.class));
 		try (ExecutorService delivery = Executors.newSingleThreadExecutor();
@@ -128,13 +134,67 @@ class RealtimeBrokerTests {
 
 			Future<?> closing = closer.submit(() -> broker.closeSession("closing-session"));
 			verify(emitter, org.mockito.Mockito.timeout(1_000)).complete();
-			assertThat(closing.isDone()).isFalse();
-			releaseSend.countDown();
 			closing.get(1, TimeUnit.SECONDS);
 			assertThat(sendFinished.getCount()).isZero();
+			releaseSend.countDown();
 
 			broker.publish(new RealtimeEvent(UUID.randomUUID(), CLOCK.instant(), List.of(), null, null));
 			verify(emitter, org.mockito.Mockito.after(100).times(2))
+					.send(any(SseEmitter.SseEventBuilder.class));
+		}
+	}
+
+	@Test
+	void permanentlyStalledStreamsRemainInsideTheConnectionCapUntilTheirWritersExit() throws Exception {
+		SseEmitter firstBlocked = mock(SseEmitter.class);
+		SseEmitter secondBlocked = mock(SseEmitter.class);
+		SseEmitter healthy = mock(SseEmitter.class);
+		CountDownLatch blockedSends = new CountDownLatch(2);
+		CountDownLatch releaseBlockedSends = new CountDownLatch(1);
+		org.mockito.stubbing.Answer<Void> block = invocation -> {
+			blockedSends.countDown();
+			while (releaseBlockedSends.getCount() > 0) {
+				try {
+					releaseBlockedSends.await(100, TimeUnit.MILLISECONDS);
+				} catch (InterruptedException ignored) {
+					// Model a transport write that does not respond to cancellation.
+				}
+			}
+			return null;
+		};
+		doNothing().doAnswer(block).when(firstBlocked).send(any(SseEmitter.SseEventBuilder.class));
+		doNothing().doAnswer(block).when(secondBlocked).send(any(SseEmitter.SseEventBuilder.class));
+		java.util.concurrent.atomic.AtomicInteger created = new java.util.concurrent.atomic.AtomicInteger();
+		try (ExecutorService delivery = Executors.newThreadPerTaskExecutor(
+				Thread.ofVirtual().name("realtime-test-", 0).factory())) {
+			RealtimeBroker broker = new RealtimeBroker(2, 30_000, CLOCK, ignored -> switch (created.getAndIncrement()) {
+				case 0 -> firstBlocked;
+				case 1 -> secondBlocked;
+				default -> healthy;
+			}, delivery);
+			broker.subscribe("slow-one");
+			broker.subscribe("slow-two");
+			broker.publish(new RealtimeEvent(UUID.randomUUID(), CLOCK.instant(), List.of(), null, null));
+			assertThat(blockedSends.await(1, TimeUnit.SECONDS)).isTrue();
+
+			long started = System.nanoTime();
+			broker.closeSession("slow-one");
+			broker.closeSession("slow-two");
+			assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(500);
+
+			assertThat(broker.connectionCount()).isEqualTo(2);
+			verify(firstBlocked, org.mockito.Mockito.never()).complete();
+			verify(secondBlocked, org.mockito.Mockito.never()).complete();
+			assertThatThrownBy(() -> broker.subscribe("healthy-session"))
+					.isInstanceOf(ResponseStatusException.class)
+					.hasMessageContaining("503 SERVICE_UNAVAILABLE");
+			releaseBlockedSends.countDown();
+			await().atMost(1, TimeUnit.SECONDS)
+					.untilAsserted(() -> assertThat(broker.connectionCount()).isZero());
+			verify(firstBlocked).complete();
+			verify(secondBlocked).complete();
+			broker.subscribe("healthy-session");
+			verify(healthy, org.mockito.Mockito.timeout(1_000))
 					.send(any(SseEmitter.SseEventBuilder.class));
 		}
 	}

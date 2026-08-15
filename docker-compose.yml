@@ -12,7 +12,7 @@ services:
     networks:
       - edge
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,9 +44,9 @@ services:
       RAW_CHECK_RETENTION_ENABLED: ${RAW_CHECK_RETENTION_ENABLED:-true}
       RAW_CHECK_RETENTION_DAYS: ${RAW_CHECK_RETENTION_DAYS:-30}
       RAW_CHECK_RETENTION_BATCH_SIZE: ${RAW_CHECK_RETENTION_BATCH_SIZE:-1000}
-      RAW_CHECK_RETENTION_MAX_BATCHES_PER_RUN: ${RAW_CHECK_RETENTION_MAX_BATCHES_PER_RUN:-10}
+      RAW_CHECK_RETENTION_MAX_BATCHES_PER_RUN: ${RAW_CHECK_RETENTION_MAX_BATCHES_PER_RUN:-2}
       RAW_CHECK_RETENTION_INITIAL_DELAY: ${RAW_CHECK_RETENTION_INITIAL_DELAY:-60000}
-      RAW_CHECK_RETENTION_CLEANUP_DELAY: ${RAW_CHECK_RETENTION_CLEANUP_DELAY:-86400000}
+      RAW_CHECK_RETENTION_CLEANUP_DELAY: ${RAW_CHECK_RETENTION_CLEANUP_DELAY:-60000}
       SSE_MAX_CONNECTIONS: ${SSE_MAX_CONNECTIONS:-8}
       SSE_CONNECTION_TIMEOUT: ${SSE_CONNECTION_TIMEOUT:-300000}
       SSE_HEARTBEAT_DELAY: ${SSE_HEARTBEAT_DELAY:-15000}
@@ -74,10 +74,10 @@ services:
     cpus: 1.50
     pids_limit: 256
     restart: unless-stopped
-    stop_grace_period: 45s
+    stop_grace_period: 80s
 
   postgres:
-    image: postgres:17.10-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    image: postgres:17.11-alpine@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-homelab_monitor}
       POSTGRES_USER: ${POSTGRES_ADMIN_USER:-homelab_admin}
